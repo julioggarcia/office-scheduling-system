@@ -15,17 +15,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     try {
       const result = await prisma.$transaction(async (tx) => {
-        const b = await tx.building.create({ data: { name, address: address || null, floorCount: count } });
-        const floorsData = [] as any[];
-        for (let i = 1; i <= count; i++) {
-          floorsData.push({ name: `Floor ${i}`, order: i, buildingId: b.id });
-        }
-        if (floorsData.length > 0) {
-          await tx.floor.createMany({ data: floorsData });
-        }
-        const created = await tx.building.findUnique({ where: { id: b.id }, include: { floors: true } });
-        return created;
-      });
+          const b = await tx.building.create({ data: { name, address: address || null, floorCount: count } });
+          const floorsData = [] as any[];
+          for (let i = 1; i <= count; i++) {
+            // create each floor individually to avoid createMany runtime issues
+            await tx.floor.create({ data: { name: `Floor ${i}`, order: i, buildingId: b.id } });
+          }
+          const created = await tx.building.findUnique({ where: { id: b.id }, include: { floors: true } });
+          return created;
+        });
       return res.json(result);
     } catch (err) {
       console.error(err);
