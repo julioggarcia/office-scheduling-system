@@ -1,0 +1,79 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  active        Boolean  @default(true)
+  isAdmin       Boolean  @default(false)
+  adObjectId    String?  @unique
+  defaultLocationId String? 
+  defaultWorkers DefaultWorker[]
+  reservations  Reservation[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Building {
+  id        String   @id @default(cuid())
+  name      String
+  floors    Floor[]
+}
+
+model Floor {
+  id         String     @id @default(cuid())
+  building   Building   @relation(fields: [buildingId], references: [id])
+  buildingId String
+  name       String
+  order      Int
+  svgContent String?
+  locations  Location[]
+}
+
+model Location {
+  id           String    @id @default(cuid())
+  label        String
+  type         String
+  floor        Floor     @relation(fields: [floorId], references: [id])
+  floorId      String
+  polygon      LocationPolygon?
+  imageUrl     String?
+  defaultWorkers DefaultWorker[]
+  reservations Reservation[]
+}
+
+model LocationPolygon {
+  id         String   @id @default(cuid())
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String   @unique
+  // store SVG polygon points as simple stringified array: [[x,y],[x,y],...]
+  points     String
+  editable   Boolean  @default(true)
+}
+
+model DefaultWorker {
+  id         String   @id @default(cuid())
+  location   Location @relation(fields: [locationId], references: [id])
+  locationId String
+  user       User     @relation(fields: [userId], references: [id])
+  userId     String
+}
+
+model Reservation {
+  id          String   @id @default(cuid())
+  location    Location @relation(fields: [locationId], references: [id])
+  locationId  String
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  start       DateTime
+  end         DateTime
+  approved    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
