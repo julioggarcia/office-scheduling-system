@@ -2,11 +2,14 @@ import React, { useState } from 'react';
 
 type Point = [number, number];
 
-export default function MapEditor({ imageUrl, onSave }: { imageUrl?: string; onSave: (points: Point[]) => void }) {
+export default function MapEditor({ imageUrl, floorId, onSaved }: { imageUrl?: string; floorId?: string; onSaved?: () => void }) {
   const [points, setPoints] = useState<Point[]>([]);
+  const [label, setLabel] = useState('');
+  const [type, setType] = useState('desk');
+  const [saving, setSaving] = useState(false);
 
   function onClick(e: React.MouseEvent<SVGSVGElement>) {
-    const rect = (e.target as SVGElement).getBoundingClientRect();
+    const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
     setPoints((p) => [...p, [x, y]]);
@@ -16,8 +19,34 @@ export default function MapEditor({ imageUrl, onSave }: { imageUrl?: string; onS
     setPoints((p) => p.slice(0, -1));
   }
 
-  function save() {
-    onSave(points);
+  async function save() {
+    if (!floorId) {
+      alert('Please select a floor in the Map Editor before saving a polygon.');
+      return;
+    }
+    if (!label) {
+      alert('Please provide a label for this location');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch('/api/locations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, type, floorId, points }) });
+      const j = await res.json();
+      if (!res.ok) {
+        alert('Error creating location: ' + JSON.stringify(j));
+      } else {
+        alert('Location created: ' + j.label);
+        setPoints([]);
+        setLabel('');
+        setType('desk');
+        onSaved?.();
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error creating location');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -37,8 +66,15 @@ export default function MapEditor({ imageUrl, onSave }: { imageUrl?: string; onS
         <button onClick={undo} disabled={points.length === 0} style={{ marginRight: 8 }}>
           Undo
         </button>
-        <button onClick={save} disabled={points.length < 3}>
-          Save Polygon
+        <input placeholder="Location label" value={label} onChange={(e) => setLabel(e.target.value)} style={{ marginRight: 8 }} />
+        <select value={type} onChange={(e) => setType(e.target.value)} style={{ marginRight: 8 }}>
+          <option value="desk">Desk</option>
+          <option value="cubicle">Cubicle</option>
+          <option value="office">Office</option>
+          <option value="other">Other</option>
+        </select>
+        <button onClick={save} disabled={points.length < 3 || saving}>
+          {saving ? 'Saving...' : 'Save Location (create)'}
         </button>
       </div>
     </div>

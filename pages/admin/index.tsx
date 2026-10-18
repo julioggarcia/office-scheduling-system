@@ -14,6 +14,9 @@ const Admin: NextPage = () => {
           <Link href="/admin/locations">Manage Locations</Link>
         </li>
         <li>
+          <Link href="/admin/buildings">Add Building</Link>
+        </li>
+        <li>
           <Link href="/admin/staff-import">Import Staff (CSV)</Link>
         </li>
       </ul>

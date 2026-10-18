@@ -68,49 +68,8 @@ export default function ManageLocationsPage() {
       </p>
 
       <h2>Create Location</h2>
-      <form onSubmit={submit}>
-        <div>
-          <label>Label</label>
-          <br />
-          <input value={label} onChange={(e) => setLabel(e.target.value)} required />
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>Type</label>
-          <br />
-          <select value={type} onChange={(e) => setType(e.target.value)}>
-            <option value="desk">Desk</option>
-            <option value="cubicle">Cubicle</option>
-            <option value="office">Office</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>Building</label>
-          <br />
-          <select value={buildingId} onChange={(e) => { setBuildingId(e.target.value); const b = buildings.find(x => x.id === e.target.value); setFloorId(b?.floors?.[0]?.id || ''); }}>
-            {buildings.map((b) => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>Floor</label>
-          <br />
-          <select value={floorId} onChange={(e) => setFloorId(e.target.value)}>
-            {buildings.find((b) => b.id === buildingId)?.floors.map((f) => (
-              <option key={f.id} value={f.id}>{f.name}</option>
-            ))}
-          </select>
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>Image URL (optional)</label>
-          <br />
-          <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <button type="submit">Create</button>
-        </div>
-      </form>
+      <p>Locations must be created by drawing polygons on the floor SVG in the <a href="/map-editor">Map Editor</a>. Open the Map Editor, select the building and floor, draw a polygon, provide a label and type, then click Save to persist the location and polygon.</p>
+      <p style={{ color: '#666' }}>The inline create form has been removed to ensure locations are only created from polygons.</p>
       {message && <div style={{ marginTop: 8 }}><strong>{message}</strong></div>}
 
       <h2 style={{ marginTop: 20 }}>Existing Locations</h2>
