@@ -3,12 +3,15 @@ import prisma from '../../../lib/prisma';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
-  const { buildingId, floorId, svg } = req.body;
-  if (!buildingId || !floorId || !svg) return res.status(400).json({ error: 'buildingId, floorId and svg required' });
+  const { buildingId, floorId, svg, image } = req.body;
+  if (!buildingId || !floorId) return res.status(400).json({ error: 'buildingId and floorId required' });
 
   try {
-    // update floor with svg content
-    const f = await prisma.floor.update({ where: { id: floorId }, data: { svgContent: svg } });
+    // update floor with svg content or image content (data URL)
+    const data: any = {};
+    if (svg) data.svgContent = svg;
+    if (image) data.imageContent = image;
+    const f = await prisma.floor.update({ where: { id: floorId }, data });
     return res.json({ ok: true, floor: { id: f.id, name: f.name } });
   } catch (err) {
     console.error(err);

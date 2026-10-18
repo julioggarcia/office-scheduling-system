@@ -8,10 +8,13 @@ export default function MapEditor({ imageUrl, floorId, onSaved }: { imageUrl?: s
   const [type, setType] = useState('desk');
   const [saving, setSaving] = useState(false);
 
+  const svgRef = React.useRef<SVGSVGElement | null>(null);
+
   function onClick(e: React.MouseEvent<SVGSVGElement>) {
     const rect = (e.currentTarget as SVGElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    // store pixel coords temporarily
     setPoints((p) => [...p, [x, y]]);
   }
 
@@ -28,9 +31,18 @@ export default function MapEditor({ imageUrl, floorId, onSaved }: { imageUrl?: s
       alert('Please provide a label for this location');
       return;
     }
+    // normalize points to [0..1] relative to svg drawing area
+    const svgEl = svgRef.current;
+    if (!svgEl) {
+      alert('SVG element not available');
+      return;
+    }
+    const rect = svgEl.getBoundingClientRect();
+    const normalized = points.map((p) => [p[0] / rect.width, p[1] / rect.height]);
+
     setSaving(true);
     try {
-      const res = await fetch('/api/locations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, type, floorId, points }) });
+      const res = await fetch('/api/locations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, type, floorId, points: normalized }) });
       const j = await res.json();
       if (!res.ok) {
         alert('Error creating location: ' + JSON.stringify(j));
@@ -52,8 +64,8 @@ export default function MapEditor({ imageUrl, floorId, onSaved }: { imageUrl?: s
   return (
     <div>
       <div style={{ border: '1px solid #ccc', display: 'inline-block' }}>
-        <svg width={800} height={600} onClick={onClick} style={{ background: '#f8f8f8' }}>
-          {imageUrl && <image href={imageUrl} width="800" height="600" />}
+        <svg ref={svgRef} width={800} height={600} onClick={onClick} style={{ background: '#f8f8f8' }}>
+          {imageUrl && <image href={imageUrl} width="800" height="600" preserveAspectRatio="xMidYMid meet" />}
           {points.length > 0 && (
             <polygon points={points.map((p) => p.join(',')).join(' ')} fill="rgba(0,120,255,0.2)" stroke="#0078ff" />
           )}

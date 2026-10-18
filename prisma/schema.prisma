@@ -36,6 +36,7 @@ model Floor {
   name       String
   order      Int
   svgContent String?
+  imageContent String?
   locations  Location[]
 }
 
