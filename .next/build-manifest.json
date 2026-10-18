@@ -32,10 +32,10 @@
       "static/chunks/main.js",
       "static/chunks/pages/admin.js"
     ],
-    "/admin/staff-import": [
+    "/admin/upload-svg": [
       "static/chunks/webpack.js",
       "static/chunks/main.js",
-      "static/chunks/pages/admin/staff-import.js"
+      "static/chunks/pages/admin/upload-svg.js"
     ],
     "/map-editor": [
       "static/chunks/webpack.js",

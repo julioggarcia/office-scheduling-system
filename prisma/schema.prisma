@@ -22,9 +22,11 @@ model User {
 }
 
 model Building {
-  id        String   @id @default(cuid())
-  name      String
-  floors    Floor[]
+  id         String   @id @default(cuid())
+  name       String
+  address    String?
+  floorCount Int      @default(0)
+  floors     Floor[]
 }
 
 model Floor {
