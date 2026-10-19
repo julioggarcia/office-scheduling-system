@@ -46,6 +46,9 @@ model Location {
   type         String
   floor        Floor     @relation(fields: [floorId], references: [id])
   floorId      String
+  parent       Location? @relation("LocationParent", fields: [parentId], references: [id])
+  parentId     String?
+  children     Location[] @relation("LocationParent")
   polygon      LocationPolygon?
   imageUrl     String?
   defaultWorkers DefaultWorker[]

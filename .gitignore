@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+.build/
+build/
+.next/cache/
+.output/
+.vercel/
+
+# Local env files
+.env
+.env.*
+!.env.example
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Typescript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+coverage/*
+
+# Build outputs
+dist/
+
+# SQLite and local DBs
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Temporary
+*.tgz
+*.tmp
+*.temp
+
+# Optional: Prisma client binary artifacts
+.prisma/
+
+# Ignore local secret/session stores
+.env.local
+.session*/
+
+# Keep composer/lock or other package manager files if needed
+# Add project-specific exceptions below

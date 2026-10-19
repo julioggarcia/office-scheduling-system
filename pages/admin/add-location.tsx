@@ -17,7 +17,7 @@ export default function AddLocationPage() {
       </ul>
 
       <p>
-        If you need to create a building (name, address, floor count), use the API endpoint POST <code>/api/buildings</code> with JSON { name, address, floorCount } or the Manage Buildings UI (not implemented in this scaffold). The Add-Building form in the scaffold has been replaced by this polygon-driven Add Location flow.
+        If you need to create a building (name, address, floor count), use the API endpoint POST <code>/api/buildings</code> with JSON <code>{`{ name, address, floorCount }`}</code> or the Manage Buildings UI (not implemented in this scaffold). The Add-Building form in the scaffold has been replaced by this polygon-driven Add Location flow.
       </p>
 
       <p>

@@ -1,3 +1,34 @@
 html,body,#__next { height: 100%; }
-body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; }
+:root{
+  --bg: #ffffff;
+  --surface: #f8f8f8;
+  --text: #111111;
+  --muted: #666666;
+  --accent: #0078ff;
+  --accent-strong: #0057d9;
+  --success: #00c864;
+  --panel: #fafafa;
+}
+
+.dark{
+  --bg: #0b1220;
+  --surface: #0f1724;
+  --text: #e6eef8;
+  --muted: #9aa7b2;
+  --accent: #3aa0ff;
+  --accent-strong: #1e6fe8;
+  --success: #1fb957;
+  --panel: #071021;
+}
+
+body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background: var(--bg); color: var(--text); }
 button { font-family: inherit; }
+
+a { color: var(--accent); }
+
+.header { display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background: var(--surface); border-bottom: 1px solid rgba(0,0,0,0.06); }
+.header .title { font-weight:700; }
+.header .nav { display:flex; gap:12px; }
+
+.container { padding: 20px; }
+

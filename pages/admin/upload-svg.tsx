@@ -31,7 +31,6 @@ export default function UploadSvgPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const payload: any = { buildingId, floorId };
-    if (svg) payload.svg = svg;
     if (imageData) payload.image = imageData;
     const res = await fetch('/api/buildings/upload-svg', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const j = await res.json();
@@ -61,32 +60,25 @@ export default function UploadSvgPage() {
           </select>
         </div>
         <div style={{ marginTop: 8 }}>
-          <label>SVG content (paste or upload below)</label>
-          <br />
-          <textarea rows={12} cols={80} value={svg} onChange={(e) => setSvg(e.target.value)} />
-        </div>
-        <div style={{ marginTop: 8 }}>
-          <label>Or upload file</label>
+          <label>Upload floor image (PNG/JPEG/SVG)</label>
           <br />
           <input type="file" accept="image/*,image/svg+xml" onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f) return;
             if (f.type === 'image/svg+xml') {
               const text = await f.text();
-              setSvg(text);
-              setImageData('');
+              // store svg into imageData as an SVG string as well
+              setImageData(text);
             } else {
               // read as data URL
               const reader = new FileReader();
               reader.onload = () => {
                 const result = reader.result as string;
                 setImageData(result);
-                setSvg('');
               };
               reader.readAsDataURL(f);
             }
           }} />
-        </div>
         </div>
         <div style={{ marginTop: 8 }}>
           <button type="submit">Save SVG to Floor</button>

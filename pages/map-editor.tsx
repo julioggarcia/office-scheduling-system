@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import MapEditor from '../components/MapEditor';
 
+type Building = { id: string; name: string; floors: { id: string; name: string }[] };
+
 export default function MapEditorPage() {
-  const [buildings, setBuildings] = useState<any[]>([]);
+  const [buildings, setBuildings] = useState<Building[]>([]);
   const [buildingId, setBuildingId] = useState('');
   const [floorId, setFloorId] = useState('');
-  const [svg, setSvg] = useState<string | undefined>(undefined);
+  const [imageData, setImageData] = useState<string | undefined>(undefined);
+  const [locations, setLocations] = useState<Array<{ id: string; label: string; points: string | null }>>([]);
 
   useEffect(() => {
     fetch('/api/buildings').then((r) => r.json()).then((b) => setBuildings(b)).catch(console.error);
@@ -19,18 +22,41 @@ export default function MapEditorPage() {
   }, [buildings]);
 
   useEffect(() => {
-    async function loadSvg() {
+    async function loadFloorImage() {
       if (!floorId) return;
       const res = await fetch('/api/floors/' + floorId);
       if (res.ok) {
         const j = await res.json();
-        setSvg(j.svgContent || undefined);
+        setImageData(j.imageContent || j.svgContent || undefined);
       } else {
-        setSvg(undefined);
+        setImageData(undefined);
       }
     }
-    loadSvg();
+    loadFloorImage();
   }, [floorId]);
+
+  useEffect(() => {
+    async function loadLocations() {
+      if (!floorId) { setLocations([]); return; }
+      const res = await fetch('/api/locations?floorId=' + floorId);
+      if (res.ok) {
+        const j = await res.json();
+        setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId })));
+      } else {
+        setLocations([]);
+      }
+    }
+    loadLocations();
+  }, [floorId]);
+
+  async function refreshLocations() {
+    if (!floorId) return;
+    const res = await fetch('/api/locations?floorId=' + floorId);
+    if (res.ok) {
+      const j = await res.json();
+      setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId })));
+    }
+  }
 
   return (
     <div style={{ padding: 20 }}>
@@ -50,7 +76,7 @@ export default function MapEditorPage() {
         </select>
       </div>
       <p>Click to add points, create polygon outlining a desk/cubicle/office. Provide a label and type, then save to create a Location.</p>
-      <MapEditor imageUrl={svg} floorId={floorId} onSaved={() => { /* refresh list if needed */ }} />
+      <MapEditor imageUrl={imageData} floorId={floorId} existingPolygons={locations} onSaved={refreshLocations} />
     </div>
   );
 }

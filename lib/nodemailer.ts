@@ -5,7 +5,7 @@ const port = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : 587;
 const user = process.env.SMTP_USER;
 const pass = process.env.SMTP_PASS;
 
-let transporter: nodemailer.Transporter | null = null;
+let transporter: any | null = null;
 if (host && user && pass) {
   transporter = nodemailer.createTransport({
     host,
