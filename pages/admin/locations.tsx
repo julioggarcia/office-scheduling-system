@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import PageHeader from '../../components/PageHeader';
 
 type Building = { id: string; name: string; floors: { id: string; name: string }[] };
 type Location = { id: string; label: string; type: string; floorId: string; floor?: { id: string; name: string } };
@@ -61,41 +63,45 @@ export default function ManageLocationsPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Manage Locations</h1>
-      <p>
-        <a href="/admin">Back to Admin</a>
-      </p>
+    <div>
+      <PageHeader
+        title="Locations"
+        subtitle="Every bookable space. New locations are created by drawing them in the Map Editor."
+        actions={<Link href="/map-editor" className="btn btn-primary">+ Draw new location</Link>}
+      />
+      {message && <div className="alert" style={{ marginBottom: 16 }}>{message}</div>}
 
-      <h2>Create Location</h2>
-      <p>Locations must be created by drawing polygons on the floor SVG in the <a href="/map-editor">Map Editor</a>. Open the Map Editor, select the building and floor, draw a polygon, provide a label and type, then click Save to persist the location and polygon.</p>
-      <p style={{ color: '#666' }}>The inline create form has been removed to ensure locations are only created from polygons.</p>
-      {message && <div style={{ marginTop: 8 }}><strong>{message}</strong></div>}
-
-      <h2 style={{ marginTop: 20 }}>Existing Locations</h2>
-      <table style={{ borderCollapse: 'collapse', width: '100%' }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>Label</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>Type</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>Floor</th>
-            <th style={{ textAlign: 'left', borderBottom: '1px solid #ddd' }}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {locations.map((loc) => (
-            <tr key={loc.id}>
-              <td style={{ padding: '6px 0' }}>{loc.label}</td>
-              <td style={{ padding: '6px 0' }}>{loc.type}</td>
-              <td style={{ padding: '6px 0' }}>{loc.floor?.name || loc.floorId}</td>
-              <td style={{ padding: '6px 0' }}>
-                <a href={`/admin/upload-svg`} style={{ marginRight: 8 }}>Edit Map</a>
-                <a href={`/map-editor`}>Edit Polygon</a>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="card" style={{ padding: 0 }}>
+        {locations.length === 0 ? (
+          <div className="empty">No locations yet. <Link href="/map-editor">Open the Map Editor</Link> to draw one.</div>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>Type</th>
+                  <th>Floor</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {locations.map((loc) => (
+                  <tr key={loc.id}>
+                    <td><strong>{loc.label}</strong></td>
+                    <td><span className="badge">{loc.type}</span></td>
+                    <td className="muted">{loc.floor?.name || loc.floorId}</td>
+                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <Link href="/admin/upload-svg" className="btn btn-sm" style={{ marginRight: 6 }}>Floorplan</Link>
+                      <Link href="/map-editor" className="btn btn-sm">Edit shape</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

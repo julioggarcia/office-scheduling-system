@@ -34,20 +34,23 @@ export default function LocationMap({ imageUrl, polygons, onPolygonClick, select
   const selectedLabel = polygons?.find((p) => p.id === selectedId)?.label;
 
   return (
-    <div ref={wrapperRef} style={{ border: '1px solid #ddd', display: 'inline-block', position: 'relative' }}>
-      <svg width={width} height={height} style={{ background: 'var(--surface)', display: 'block' }}>
+    <div ref={wrapperRef} className="map-frame">
+      <svg width={width} height={height}>
         {imageUrl && <image href={imageUrl} width={width} height={height} preserveAspectRatio="xMidYMid meet" />}
         {polygons?.map((poly) => (
           <g key={poly.id}>
             <polygon
               points={renderPoints(poly.points)}
-              fill={poly.id === selectedId ? 'rgba(0,120,255,0.25)' : (highlightedIds && highlightedIds.includes(poly.id) ? 'rgba(255,200,80,0.15)' : 'rgba(0,200,100,0.15)')}
-              stroke={poly.id === selectedId ? 'var(--accent-strong)' : (highlightedIds && highlightedIds.includes(poly.id) ? '#ffb84d' : 'var(--success)')}
               onClick={() => onPolygonClick?.(poly.id)}
               onMouseEnter={(e) => handleMouseEnter(e, poly)}
               onMouseMove={handleMouseMove}
               onMouseLeave={handleMouseLeave}
-              style={{ cursor: 'pointer' }}
+              style={{
+                cursor: 'pointer',
+                strokeWidth: poly.id === selectedId ? 2.5 : 1.5,
+                fill: poly.id === selectedId ? 'rgba(99,102,241,0.3)' : (highlightedIds && highlightedIds.includes(poly.id) ? 'rgba(245,158,11,0.18)' : 'rgba(16,185,129,0.16)'),
+                stroke: poly.id === selectedId ? 'var(--accent)' : (highlightedIds && highlightedIds.includes(poly.id) ? 'var(--warning)' : 'var(--success)'),
+              }}
             />
           </g>
         ))}

@@ -3,6 +3,12 @@ import type { NextPage } from 'next';
 import Link from 'next/link';
 import prisma from '../lib/prisma';
 import LocationMap from '../components/LocationMap';
+import PageHeader from '../components/PageHeader';
+
+// YYYY-MM-DD in local time (toISOString() would shift the date across UTC midnight)
+function localIsoDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 type BuildingView = {
   id: string;
@@ -14,7 +20,7 @@ type BuildingView = {
 const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
   const [openMap, setOpenMap] = useState<string | null>(buildings.length ? buildings[0].id : null);
   const [selectedPolygon, setSelectedPolygon] = useState<{ buildingId: string; floorId: string; polygonId: string } | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [selectedDate, setSelectedDate] = useState<string>(() => localIsoDate(new Date()));
   const [reservations, setReservations] = useState<any[]>([]);
   const [viewMonth, setViewMonth] = useState(() => new Date());
   const [currentDescendants, setCurrentDescendants] = useState<string[]>([]);
@@ -97,20 +103,28 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
     const end = new Date(year, month + 1, 0);
     const days: number[] = [];
     for (let d = 1; d <= end.getDate(); d++) days.push(d);
+    const today = localIsoDate(new Date());
 
     return (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button onClick={() => changeMonth(-1)}>◀</button>
-          <div style={{ fontWeight: 'bold' }}>{viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })}</div>
-          <button onClick={() => changeMonth(1)}>▶</button>
+      <div className="panel">
+        <div className="calendar-head">
+          <button className="btn-sm" onClick={() => changeMonth(-1)} aria-label="Previous month">‹</button>
+          <div className="month">{viewMonth.toLocaleString(undefined, { month: 'long', year: 'numeric' })}</div>
+          <button className="btn-sm" onClick={() => changeMonth(1)} aria-label="Next month">›</button>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 40px)', gap: 4, marginTop: 8 }}>
+        <div className="calendar-grid">
+          {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d) => <div key={d} className="calendar-dow">{d}</div>)}
+          {/* pad so day 1 lands under its weekday */}
+          {Array.from({ length: start.getDay() }, (_, i) => <div key={'pad' + i} />)}
           {days.map((d) => {
-            const iso = new Date(year, month, d).toISOString().slice(0, 10);
-            const isSelected = iso === selectedDate;
+            const date = new Date(year, month, d);
+            const iso = localIsoDate(date);
+            const cls = ['calendar-day'];
+            if (iso === selectedDate) cls.push('selected');
+            if (iso === today) cls.push('today');
+            if (date.getDay() === 0 || date.getDay() === 6) cls.push('weekend');
             return (
-              <div key={d} onClick={() => setSelectedDate(iso)} style={{ width: 40, height: 40, lineHeight: '40px', textAlign: 'center', background: isSelected ? 'var(--accent)' : 'var(--panel)', color: isSelected ? '#fff' : 'var(--text)', border: '1px solid rgba(0,0,0,0.06)', cursor: 'pointer' }}>{d}</div>
+              <div key={d} className={cls.join(' ')} onClick={() => setSelectedDate(iso)}>{d}</div>
             );
           })}
         </div>
@@ -119,26 +133,37 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Office Reservation</h1>
-      <nav>
-        <Link href="/admin">Admin</Link> | <Link href="/map-editor">Map Editor</Link> | <Link href="/admin/upload-svg">Upload SVG</Link>
-      </nav>
+    <div>
+      <PageHeader title="Reserve a space" subtitle="Pick a building, click a desk or office on the floorplan, then choose a day and time." />
+
+      {buildings.length === 0 && (
+        <div className="card empty">
+          <p>No buildings yet.</p>
+          <Link href="/admin/buildings" className="btn btn-primary">Add your first building</Link>
+        </div>
+      )}
 
       {buildings.map((b) => (
-        <section key={b.id} style={{ border: '1px solid #ddd', padding: 12, marginTop: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2 style={{ margin: 0 }}>{b.name} ({b.floorCount} floors)</h2>
+        <section key={b.id} className="card">
+          <div className="card-header">
+            <div>
+              <h2>{b.name}</h2>
+              <div className="hint">{b.floorCount} {b.floorCount === 1 ? 'floor' : 'floors'}</div>
+            </div>
             <button onClick={() => setOpenMap((prev) => {
               const next = prev === b.id ? null : b.id;
               if (next === null) setSelectedPolygon(null);
               return next;
-            })}>{openMap === b.id ? 'Hide Map' : 'Show Map'}</button>
+            })}>{openMap === b.id ? 'Hide map' : 'Show map'}</button>
           </div>
 
+          {openMap === b.id && !b.firstFloor && (
+            <div className="alert">This building has no floors yet.</div>
+          )}
+
           {openMap === b.id && b.firstFloor && (
-            <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="reserve-layout">
+              <div className="map-scroll">
                 <LocationMap
                   imageUrl={b.firstFloor.imageContent ?? undefined}
                   polygons={b.firstFloor.locations.map((l) => ({ id: l.id, points: l.polygon?.points ?? '', label: l.label, parentId: l.parentId ?? undefined }))}
@@ -149,21 +174,24 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
                       getDescendants(b.firstFloor.locations as any, selectedPolygon.polygonId) : []
                   }
                 />
-                <div style={{ marginTop: 8 }}>
-                  {selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor.id ? (
-                    renderCalendar(b.id, b.firstFloor.id)
-                  ) : (
-                    <div style={{ marginTop: 8, color: 'var(--muted)' }}>Click on a polygon to view its calendar and daily schedule.</div>
-                  )}
-                </div>
               </div>
 
-              {selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor.id && (
-                <div style={{ width: 300 }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Day Schedule ({selectedDate})</div>
-                  <DaySchedule reservations={reservations} selectedDate={selectedDate} locationId={selectedPolygon.polygonId} descendants={currentDescendants} />
-                </div>
-              )}
+              <div className="reserve-side">
+                {selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor.id ? (
+                  <>
+                    {renderCalendar(b.id, b.firstFloor.id)}
+                    <div className="panel">
+                      <div className="panel-title">
+                        <span>{b.firstFloor.locations.find((l) => l.id === selectedPolygon.polygonId)?.label ?? 'Schedule'}</span>
+                        <span className="hint">{new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      </div>
+                      <DaySchedule reservations={reservations} selectedDate={selectedDate} locationId={selectedPolygon.polygonId} descendants={currentDescendants} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="panel empty">Click a space on the map to see its calendar and daily schedule.</div>
+                )}
+              </div>
             </div>
           )}
         </section>
@@ -171,6 +199,10 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
     </div>
   );
 };
+
+function fmtHour(h: number) {
+  return `${(h % 12) === 0 ? 12 : (h % 12)}${h < 12 || h === 24 ? 'am' : 'pm'}`;
+}
 
 function DaySchedule({ reservations, onRequest, selectedDate, locationId, descendants }: { reservations: any[]; selectedDate: string; locationId: string; descendants: string[]; onRequest?: (startIso: string, endIso: string, includeChildren: boolean) => void }) {
   const startHour = 4;
@@ -269,15 +301,6 @@ function DaySchedule({ reservations, onRequest, selectedDate, locationId, descen
     return () => window.removeEventListener('mouseup', onMouseUp);
   }, []);
 
-  // map reservations to positions
-  const blocks = reservations.map((r) => {
-    const s = new Date(r.start);
-    const e = new Date(r.end);
-    const top = ((s.getHours() + s.getMinutes() / 60) - startHour) / (endHour - startHour) * 100;
-    const height = ( (e.getHours() + e.getMinutes() / 60) - (s.getHours() + s.getMinutes() / 60) ) / (endHour - startHour) * 100;
-    return { id: r.id, top, height };
-  });
-
   async function confirmRequest() {
     if (selStart === null || selEnd === null) return alert('No selection');
     const startH = hours[selStart];
@@ -313,27 +336,35 @@ function DaySchedule({ reservations, onRequest, selectedDate, locationId, descen
   }
 
   return (
-    <div style={{ position: 'relative', height: 600, border: '1px solid rgba(0,0,0,0.06)', padding: 8, background: 'transparent' }}>
-      {hours.map((h, idx) => {
-        const isReserved = reserved[idx];
-        const isSelected = selStart !== null && selEnd !== null && idx >= selStart && idx < selEnd;
-        return (
-          <div key={h}
-            onMouseDown={() => onHourMouseDown(idx)}
-            onMouseEnter={() => onHourMouseEnter(idx)}
-            style={{ height: `${600 / (endHour - startHour + 1)}px`, borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', userSelect: 'none', cursor: isReserved ? 'not-allowed' : 'pointer', opacity: isReserved ? 0.5 : 1 }}>
-            <div style={{ width: 50, fontSize: 12, color: 'var(--text)' }}>{(h % 12) === 0 ? 12 : (h % 12)}{h < 12 ? 'am' : 'pm'}</div>
-            <div style={{ flex: 1, background: isSelected ? 'rgba(0,120,255,0.25)' : 'transparent', height: '100%' }} />
-          </div>
-        );
-      })}
+    <div>
+      <div className="schedule">
+        {hours.map((h, idx) => {
+          const isReserved = reserved[idx];
+          const isSelected = selStart !== null && selEnd !== null && idx >= selStart && idx < selEnd;
+          return (
+            <div key={h}
+              className={'schedule-slot' + (isReserved ? ' reserved' : '') + (isSelected ? ' selected' : '')}
+              onMouseDown={() => onHourMouseDown(idx)}
+              onMouseEnter={() => onHourMouseEnter(idx)}
+              style={{ height: 30 }}>
+              <div className="time">{(h % 12) === 0 ? 12 : (h % 12)} {h < 12 ? 'am' : 'pm'}</div>
+              <div className="fill" />
+            </div>
+          );
+        })}
+      </div>
+      <div className="legend">
+        <span className="l-free">Available</span>
+        <span className="l-sel">Selected</span>
+        <span className="l-res">Reserved</span>
+      </div>
 
-      {blocks.map((b) => (
-        <div key={b.id} style={{ position: 'absolute', left: 60, right: 8, top: `${b.top}%`, height: `${b.height}%`, background: 'rgba(200,200,200,0.6)', borderRadius: 4 }} />
-      ))}
-
-      <div style={{ marginTop: 8 }}>
-        <button onClick={confirmRequest} disabled={selStart === null}>Confirm Request</button>
+      <div className="actions" style={{ marginTop: 12 }}>
+        <button className="btn-primary" onClick={confirmRequest} disabled={selStart === null} style={{ width: '100%' }}>
+          {selStart !== null && selEnd !== null
+            ? `Request ${fmtHour(hours[selStart])} – ${fmtHour(hours[selEnd - 1] + 1)}`
+            : 'Drag over hours to select'}
+        </button>
       </div>
     </div>
   );

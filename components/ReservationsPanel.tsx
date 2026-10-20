@@ -29,7 +29,8 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
     }
     setLoading(true);
     try {
-      let url = `/api/reservations?locationId=${encodeURIComponent(locationId)}&page=${page}&pageSize=${pageSize}`;
+      // includeChildren so a parent (e.g. an office) also lists reservations on its desks/cubicles
+      let url = `/api/reservations?locationId=${encodeURIComponent(locationId)}&includeChildren=true&page=${page}&pageSize=${pageSize}`;
       if (filter === 'past') {
         url += '&includePast=true';
       } else if (filter === 'in-progress') {
@@ -133,62 +134,79 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
 
   return (
     <div>
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{filter === 'upcoming' ? 'Upcoming' : filter === 'past' ? 'Past' : 'In-progress'} reservations for this location</div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <label style={{ fontSize: 12, color: 'var(--muted)' }}>Show:</label>
-            <select value={filter} onChange={(e) => setFilter(e.target.value as any)}>
-              <option value="upcoming">Upcoming</option>
-              <option value="in-progress">In-progress</option>
-              <option value="past">Past</option>
-            </select>
+      <div style={{ marginBottom: 16 }}>
+        <div className="toolbar" style={{ justifyContent: 'space-between' }}>
+          <div className="hint">{filter === 'upcoming' ? 'Upcoming' : filter === 'past' ? 'Past' : 'In-progress'} reservations for this location</div>
+          <div className="segmented">
+            {(['upcoming', 'in-progress', 'past'] as const).map((f) => (
+              <button key={f} className={'btn-sm' + (filter === f ? ' btn-active' : '')} onClick={() => setFilter(f)} style={{ textTransform: 'capitalize' }}>{f.replace('-', ' ')}</button>
+            ))}
           </div>
         </div>
-        {loading ? <div>Loading...</div> : (
+        {loading ? <div className="hint">Loading…</div> : (
             <div>
-              {reservations.length === 0 ? <div style={{ color: 'var(--muted)' }}>No {filter === 'upcoming' ? 'upcoming' : filter === 'past' ? 'past' : 'in-progress'} reservations</div> : (
-              <ul>
+              {reservations.length === 0 ? <div className="hint">No {filter === 'upcoming' ? 'upcoming' : filter === 'past' ? 'past' : 'in-progress'} reservations</div> : (
+              <ul className="res-list">
                 {reservations.map(r => (
-                  <li key={r.id} style={{ marginBottom: 6 }}>
-                    <div><strong>{r.user?.name || r.userId}</strong> — {formatLocal(r.start)} to {formatLocal(r.end)} {r.approved ? '' : '(unapproved)'}</div>
-                    <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
-                      <button onClick={() => doDelete(r.id)} style={{ color: 'red' }}>Delete</button>
-                      <button onClick={() => toggleApproved(r.id, !!r.approved)}>{r.approved ? 'Unapprove' : 'Approve'}</button>
+                  <li key={r.id} className="res-item">
+                    <div className="card-header">
+                      <div>
+                        <strong>{r.user?.name || r.userId}</strong>{' '}
+                        {!r.approved && <span className="badge badge-warning">Pending</span>}
+                        {r.locationId !== locationId && (
+                          <span className="badge" style={{ marginLeft: 4 }}>{r.location?.label || polys.find(p => p.id === r.locationId)?.label || 'Sublocation'}</span>
+                        )}
+                        <div className="when">{formatLocal(r.start)} → {formatLocal(r.end)}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn-sm" onClick={() => toggleApproved(r.id, !!r.approved)}>{r.approved ? 'Unapprove' : 'Approve'}</button>
+                        <button className="btn-sm btn-danger" onClick={() => doDelete(r.id)}>Delete</button>
+                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
             )}
             {meta && (
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={() => setPage(Math.max(1, (meta.page || page) - 1))} disabled={(meta.page || page) <= 1}>Prev</button>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>Page {(meta.page || page)} of {meta.totalPages || 1} — {meta.total || 0} total</div>
-                <button onClick={() => setPage((meta.page || page) + 1)} disabled={(meta.page || page) >= (meta.totalPages || 1)}>Next</button>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn-sm" onClick={() => setPage(Math.max(1, (meta.page || page) - 1))} disabled={(meta.page || page) <= 1}>‹ Prev</button>
+                <div className="hint">Page {(meta.page || page)} of {meta.totalPages || 1} · {meta.total || 0} total</div>
+                <button className="btn-sm" onClick={() => setPage((meta.page || page) + 1)} disabled={(meta.page || page) >= (meta.totalPages || 1)}>Next ›</button>
               </div>
             )}
           </div>
         )}
       </div>
 
-      <hr />
-      <div style={{ marginTop: 8 }}>
-        <h5>Create reservation</h5>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input placeholder="user id (db id or email)" value={userId} onChange={(e) => setUserId(e.target.value)} />
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <select value={startHour} onChange={(e) => setStartHour(Number(e.target.value))}>
-            {Array.from({length: 22}, (_,i) => i).map(h => <option key={h} value={h}>{h}:00</option>)}
-          </select>
-          <select value={endHour} onChange={(e) => setEndHour(Number(e.target.value))}>
-            {Array.from({length: 23}, (_,i) => i+1).map(h => <option key={h} value={h}>{h}:00</option>)}
-          </select>
+      <div className="panel" style={{ background: 'var(--surface)' }}>
+        <h3>Create reservation</h3>
+        <div className="row">
+          <div className="field">
+            <label>User</label>
+            <input placeholder="User id or email" value={userId} onChange={(e) => setUserId(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Date</label>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div className="field">
+            <label>From</label>
+            <select value={startHour} onChange={(e) => setStartHour(Number(e.target.value))}>
+              {Array.from({length: 22}, (_,i) => i).map(h => <option key={h} value={h}>{h}:00</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>To</label>
+            <select value={endHour} onChange={(e) => setEndHour(Number(e.target.value))}>
+              {Array.from({length: 23}, (_,i) => i+1).map(h => <option key={h} value={h}>{h}:00</option>)}
+            </select>
+          </div>
         </div>
-        <div style={{ marginTop: 8 }}>
-          <label><input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} /> Include sublocations</label>
+        <div style={{ marginTop: 12 }}>
+          <label className="hint"><input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} /> Include sublocations</label>
         </div>
-        <div style={{ marginTop: 8 }}>
-          <button onClick={doCreate}>Create Reservation</button>
+        <div className="actions">
+          <button className="btn-primary" onClick={doCreate}>Create reservation</button>
         </div>
       </div>
     </div>

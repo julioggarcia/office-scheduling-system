@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import MapEditor from '../components/MapEditor';
+import PageHeader from '../components/PageHeader';
 
 type Building = { id: string; name: string; floors: { id: string; name: string }[] };
 
@@ -59,24 +60,30 @@ export default function MapEditorPage() {
   }
 
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Map Editor</h1>
-      <div style={{ marginBottom: 8 }}>
-        <label>Building</label>
-        <br />
-        <select value={buildingId} onChange={(e) => { setBuildingId(e.target.value); const b = buildings.find((x) => x.id === e.target.value); setFloorId(b?.floors?.[0]?.id || ''); }}>
-          {buildings.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
-        </select>
+    <div>
+      <PageHeader
+        title="Map editor"
+        subtitle="Outline desks, cubicles and offices on a floorplan to make them bookable."
+        actions={
+          <div className="row">
+            <div className="field">
+              <label>Building</label>
+              <select value={buildingId} onChange={(e) => { setBuildingId(e.target.value); const b = buildings.find((x) => x.id === e.target.value); setFloorId(b?.floors?.[0]?.id || ''); }}>
+                {buildings.map((b) => (<option key={b.id} value={b.id}>{b.name}</option>))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Floor</label>
+              <select value={floorId} onChange={(e) => setFloorId(e.target.value)}>
+                {buildings.find((b) => b.id === buildingId)?.floors.map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
+              </select>
+            </div>
+          </div>
+        }
+      />
+      <div className="card">
+        <MapEditor imageUrl={imageData} floorId={floorId} existingPolygons={locations} onSaved={refreshLocations} />
       </div>
-      <div style={{ marginBottom: 12 }}>
-        <label>Floor</label>
-        <br />
-        <select value={floorId} onChange={(e) => setFloorId(e.target.value)}>
-          {buildings.find((b) => b.id === buildingId)?.floors.map((f) => (<option key={f.id} value={f.id}>{f.name}</option>))}
-        </select>
-      </div>
-      <p>Click to add points, create polygon outlining a desk/cubicle/office. Provide a label and type, then save to create a Location.</p>
-      <MapEditor imageUrl={imageData} floorId={floorId} existingPolygons={locations} onSaved={refreshLocations} />
     </div>
   );
 }

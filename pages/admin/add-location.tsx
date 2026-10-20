@@ -1,28 +1,24 @@
 import React from 'react';
+import Link from 'next/link';
+import PageHeader from '../../components/PageHeader';
 
 export default function AddLocationPage() {
   return (
-    <div style={{ padding: 20 }}>
-      <h1>Add Location (Polygon-driven)</h1>
-      <p>
-        Locations are created by drawing polygons over a floor SVG. Use the Map Editor to draw outlines around desks, cubicles, or offices and then save the polygon as a new location.
-      </p>
-      <ul>
-        <li>
-          <a href="/admin/upload-svg">Upload or paste a floor SVG</a> — attach an SVG to a building/floor.
-        </li>
-        <li>
-          <a href="/map-editor">Map Editor</a> — open the SVG for the floor and draw polygons. After saving a polygon, use the API to create the Location tied to that polygon.
-        </li>
-      </ul>
-
-      <p>
-        If you need to create a building (name, address, floor count), use the API endpoint POST <code>/api/buildings</code> with JSON <code>{`{ name, address, floorCount }`}</code> or the Manage Buildings UI (not implemented in this scaffold). The Add-Building form in the scaffold has been replaced by this polygon-driven Add Location flow.
-      </p>
-
-      <p>
-        Note: The polygon saving flow currently logs polygon points to the console. Next step: wire the Map Editor's Save action to POST the polygon points to an API that creates a Location + LocationPolygon entry in the database. If you'd like, implement that now.
-      </p>
+    <div>
+      <PageHeader title="Add a location" subtitle="Locations are created by drawing shapes over a floorplan." />
+      <div className="card" style={{ maxWidth: 720 }}>
+        <ol style={{ margin: 0, paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <li>
+            <Link href="/admin/buildings">Add a building</Link> if it doesn't exist yet.
+          </li>
+          <li>
+            <Link href="/admin/upload-svg">Upload a floorplan</Link> (image or SVG) for the floor.
+          </li>
+          <li>
+            Open the <Link href="/map-editor">Map Editor</Link>, pick the building and floor, draw an outline around a desk, cubicle or office, give it a label and type, then click <strong>Create location</strong>.
+          </li>
+        </ol>
+      </div>
     </div>
   );
 }

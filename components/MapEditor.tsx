@@ -180,10 +180,13 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
         <g key={poly.id}>
           <polygon
             points={ptsStr}
-            fill={poly.id === selectedId ? 'rgba(0,120,255,0.2)' : 'rgba(0,200,100,0.15)'}
-            stroke={poly.id === selectedId ? 'var(--accent)' : 'var(--success)'}
             onClick={() => onPolyClick(poly.id)}
-            style={{ cursor: mode === 'select' ? 'pointer' : 'default' }}
+            style={{
+              cursor: mode === 'select' ? 'pointer' : 'inherit',
+              strokeWidth: poly.id === selectedId ? 2.5 : 1.5,
+              fill: poly.id === selectedId ? 'rgba(99,102,241,0.25)' : 'rgba(16,185,129,0.16)',
+              stroke: poly.id === selectedId ? 'var(--accent)' : 'var(--success)',
+            }}
           />
           {poly.id === selectedId && poly.points.map((pt, idx) => (
             <circle key={idx} cx={pt[0]} cy={pt[1]} r={6} fill="var(--accent)" onMouseDown={(e) => startVertexDrag(poly.id, idx, e)} />
@@ -195,18 +198,22 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
 
   return (
     <div>
-      <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button onClick={() => setMode('draw')} style={{ fontWeight: mode === 'draw' ? 'bold' : 'normal' }}>Pen (draw)</button>
-        <button onClick={() => setMode('select')} style={{ fontWeight: mode === 'select' ? 'bold' : 'normal' }}>Mouse (select/edit)</button>
+      <div className="toolbar">
+        <div className="segmented">
+          <button onClick={() => setMode('draw')} className={mode === 'draw' ? 'btn-active' : ''}>✎ Draw</button>
+          <button onClick={() => setMode('select')} className={mode === 'select' ? 'btn-active' : ''}>⬚ Select / edit</button>
+        </div>
+        <span className="hint">{mode === 'draw' ? 'Click on the floorplan to add points (3+ to make a shape).' : 'Click a shape to select it, then drag its corners to adjust.'}</span>
       </div>
 
-      <div style={{ border: '1px solid #ccc', display: 'inline-block' }}>
-        <svg ref={svgRef} width={width} height={height} onClick={onClick} onMouseMove={onSvgMouseMove} onMouseUp={onSvgMouseUp} style={{ background: 'var(--surface)' }}>
+      <div className="map-scroll">
+      <div className="map-frame">
+        <svg ref={svgRef} width={width} height={height} onClick={onClick} onMouseMove={onSvgMouseMove} onMouseUp={onSvgMouseUp} style={{ cursor: mode === 'draw' ? 'crosshair' : 'default' }}>
           {imageUrl && <image href={imageUrl} width={width} height={height} preserveAspectRatio="xMidYMid meet" />}
           {renderExisting(existingPolygons)}
           {mode === 'draw' && points.length > 0 && (
             <>
-              <polygon points={points.map((p) => p.join(',')).join(' ')} fill="rgba(0,120,255,0.2)" stroke="var(--accent)" />
+              <polygon points={points.map((p) => p.join(',')).join(' ')} style={{ fill: 'rgba(99,102,241,0.2)', stroke: 'var(--accent)', strokeWidth: 2, strokeDasharray: '6 4' }} />
               {points.map((p, i) => (
                 <circle key={i} cx={p[0]} cy={p[1]} r={4} fill="var(--accent)" />
               ))}
@@ -214,29 +221,38 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
           )}
         </svg>
       </div>
+      </div>
 
-      <div style={{ marginTop: 8 }}>
+      <div className="panel" style={{ marginTop: 16 }}>
         {mode === 'draw' ? (
-          <>
-            <button onClick={undo} disabled={points.length === 0} style={{ marginRight: 8 }}>Undo</button>
-            <input placeholder="Location label" value={label} onChange={(e) => setLabel(e.target.value)} style={{ marginRight: 8 }} />
-            <select value={type} onChange={(e) => setType(e.target.value)} style={{ marginRight: 8 }}>
-              <option value="desk">Desk</option>
-              <option value="cubicle">Cubicle</option>
-              <option value="office">Office</option>
-              <option value="other">Other</option>
-            </select>
-            <button onClick={saveNew} disabled={points.length < 3 || saving}>{saving ? 'Saving...' : 'Save Location (create)'}</button>
-          </>
+          <div className="row">
+            <div className="field">
+              <label>Label</label>
+              <input placeholder="e.g. Desk 4B" value={label} onChange={(e) => setLabel(e.target.value)} />
+            </div>
+            <div className="field">
+              <label>Type</label>
+              <select value={type} onChange={(e) => setType(e.target.value)}>
+                <option value="desk">Desk</option>
+                <option value="cubicle">Cubicle</option>
+                <option value="office">Office</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <button onClick={undo} disabled={points.length === 0}>↶ Undo point</button>
+            <button className="btn-primary" onClick={saveNew} disabled={points.length < 3 || saving}>{saving ? 'Saving…' : 'Create location'}</button>
+          </div>
+        ) : !selectedId ? (
+          <div className="hint">Select a shape on the map to edit it, link it to a parent, or manage its reservations.</div>
         ) : (
           <>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12 }}>Label</label>
+            <div className="row">
+              <div className="field">
+                <label>Label</label>
                 <input value={polys.find(p => p.id === selectedId)?.label ?? ''} onChange={(e) => setPolys(ps => ps.map(p => p.id === selectedId ? { ...p, label: e.target.value } : p))} />
               </div>
-              <div>
-                <label style={{ display: 'block', fontSize: 12 }}>Type</label>
+              <div className="field">
+                <label>Type</label>
                 <select value={polys.find(p => p.id === selectedId)?.type ?? 'desk'} onChange={(e) => setPolys(ps => ps.map(p => p.id === selectedId ? { ...p, type: e.target.value } : p))}>
                   <option value="desk">Desk</option>
                   <option value="cubicle">Cubicle</option>
@@ -244,14 +260,12 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
                   <option value="other">Other</option>
                 </select>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={saveEdit} disabled={!selectedId}>Save Changes</button>
-                <button onClick={deleteSelected} disabled={!selectedId} style={{ color: 'red' }}>Delete</button>
-              </div>
+              <button className="btn-primary" onClick={saveEdit} disabled={!selectedId}>Save changes</button>
+              <button className="btn-danger" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
 
               {/* Parent linkage UI */}
-              <div style={{ marginLeft: 16 }}>
-                <label style={{ display: 'block', fontSize: 12 }}>Parent</label>
+              <div className="field">
+                <label>Parent</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <select value={parentSelection ?? ''} onChange={(e) => setParentSelection(e.target.value)}>
                     <option value="">No parent</option>
@@ -279,12 +293,12 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
                   }} disabled={!selectedId}>Apply</button>
                 </div>
               </div>
+            </div>
 
-                    {/* Reservations management for admins */}
-                    <div style={{ marginTop: 12, marginLeft: 16, borderLeft: '1px solid rgba(0,0,0,0.06)', paddingLeft: 12 }}>
-                      <h4>Manage Reservations</h4>
-                      <ReservationsPanel locationId={selectedId!} onChanged={async () => { onSaved?.(); }} polys={polys} />
-                    </div>
+            {/* Reservations management for admins */}
+            <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <h3>Manage reservations</h3>
+              <ReservationsPanel locationId={selectedId!} onChanged={async () => { onSaved?.(); }} polys={polys} />
             </div>
           </>
         )}

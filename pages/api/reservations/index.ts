@@ -144,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const total = await prisma.reservation.count({ where });
 
       // ordering: past -> newest first, otherwise earliest first
-      const orderBy = wantPast ? { start: 'desc' } : { start: 'asc' };
+      const orderBy = wantPast ? { start: 'desc' as const } : { start: 'asc' as const };
 
       const reservations = await prisma.reservation.findMany({
         where,
