@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // reads: any signed-in user; changes: admins only
+  if (!(await requireUser(req, res, ...(req.method === 'GET' ? [] : (['ADMIN'] as const))))) return;
   const { id } = req.query as { id: string };
   if (!id) return res.status(400).json({ error: 'Missing id' });
 

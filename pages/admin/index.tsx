@@ -8,7 +8,9 @@ const TOOLS = [
   { href: '/admin/upload-svg', icon: '🗺️', title: 'Upload floorplan', desc: 'Attach an image or SVG floorplan to a floor.' },
   { href: '/map-editor', icon: '✎', title: 'Map editor', desc: 'Draw desks, cubicles and offices on a floorplan.' },
   { href: '/admin/locations', icon: '📍', title: 'Manage locations', desc: 'Browse every bookable space across buildings.' },
-  { href: '/admin/staff-import', icon: '👥', title: 'Import staff', desc: 'Bulk-load staff from a CSV export.' },
+  { href: '/assignments', icon: '🪑', title: 'Seat assignments', desc: 'Review requests and assign seats to staff by day and hour.' },
+  { href: '/admin/users', icon: '🧑‍💼', title: 'Staff & roles', desc: 'Set who is a manager or admin and who reports to whom.' },
+  { href: '/admin/staff-import', icon: '👥', title: 'Import staff', desc: 'Bulk-load staff, roles and managers from a CSV export.' },
 ];
 
 const Admin: NextPage = () => {

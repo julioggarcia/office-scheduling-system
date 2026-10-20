@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { NextPage } from 'next';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import prisma from '../lib/prisma';
 import LocationMap from '../components/LocationMap';
 import PageHeader from '../components/PageHeader';
@@ -24,6 +25,18 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
   const [reservations, setReservations] = useState<any[]>([]);
   const [viewMonth, setViewMonth] = useState(() => new Date());
   const [currentDescendants, setCurrentDescendants] = useState<string[]>([]);
+  const [blocks, setBlocks] = useState<AssignmentBlock[]>([]);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  function getAncestors(locations: { id: string; parentId?: string | null }[], id: string) {
+    const out: string[] = [];
+    let cur = locations.find((l) => l.id === id)?.parentId;
+    while (cur && !out.includes(cur)) {
+      out.push(cur);
+      cur = locations.find((l) => l.id === cur)?.parentId;
+    }
+    return out;
+  }
 
   function getDescendants(locations: { id: string; parentId?: string | null }[], id: string) {
     const map = new Map<string, string[]>();
@@ -57,6 +70,7 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
     if (!selectedPolygon) {
       setReservations([]);
       setCurrentDescendants([]);
+      setBlocks([]);
       return;
     }
     // when polygon selection changes, fetch reservations for that polygon's location and selectedDate
@@ -71,7 +85,13 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
       const localDayEnd = new Date(selectedDate + 'T23:59:59.999');
       const startIso = localDayStart.toISOString();
       const endIso = localDayEnd.toISOString();
-      const res = await fetch(`/api/reservations?locationIds=${q}&startIso=${encodeURIComponent(startIso)}&endIso=${encodeURIComponent(endIso)}`);
+      // assigned seats on this location, its children or its parent all block booking it
+      const related = [...ids, ...getAncestors(locs, selectedPolygon.polygonId)].map(encodeURIComponent).join(',');
+      fetch(`/api/assignments?locationIds=${related}&date=${selectedDate}`)
+        .then((r) => (r.ok ? r.json() : { blocks: [] }))
+        .then((j) => setBlocks(j.blocks || []))
+        .catch(() => setBlocks([]));
+      const res = await fetch(`/api/reservations?locationIds=${q}&startIso=${encodeURIComponent(startIso)}&endIso=${encodeURIComponent(endIso)}&pageSize=200`);
       if (res.ok) {
         const j = await res.json();
         // API may return { meta, reservations } or legacy array
@@ -89,7 +109,7 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
       }
     };
     fetchRes();
-  }, [selectedPolygon, selectedDate]);
+  }, [selectedPolygon, selectedDate, reloadKey]);
 
   function changeMonth(delta: number) {
     const d = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + delta, 1);
@@ -185,7 +205,7 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
                         <span>{b.firstFloor.locations.find((l) => l.id === selectedPolygon.polygonId)?.label ?? 'Schedule'}</span>
                         <span className="hint">{new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                       </div>
-                      <DaySchedule reservations={reservations} selectedDate={selectedDate} locationId={selectedPolygon.polygonId} descendants={currentDescendants} />
+                      <DaySchedule reservations={reservations} blocks={blocks} selectedDate={selectedDate} locationId={selectedPolygon.polygonId} descendants={currentDescendants} onReserved={() => setReloadKey((k) => k + 1)} />
                     </div>
                   </>
                 ) : (
@@ -204,31 +224,45 @@ function fmtHour(h: number) {
   return `${(h % 12) === 0 ? 12 : (h % 12)}${h < 12 || h === 24 ? 'am' : 'pm'}`;
 }
 
-function DaySchedule({ reservations, onRequest, selectedDate, locationId, descendants }: { reservations: any[]; selectedDate: string; locationId: string; descendants: string[]; onRequest?: (startIso: string, endIso: string, includeChildren: boolean) => void }) {
+type AssignmentBlock = { id: string; locationId: string; locationLabel: string; userId: string; userName: string; start: string; end: string };
+
+function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationId, descendants }: { reservations: any[]; blocks: AssignmentBlock[]; selectedDate: string; locationId: string; descendants: string[]; onReserved?: () => void }) {
+  const { data: session } = useSession();
   const startHour = 4;
   const endHour = 21; // 9pm
   const hours: number[] = [];
   for (let h = startHour; h <= endHour; h++) hours.push(h);
 
-  // reserved boolean per hour
-  const reserved = new Array(hours.length).fill(false);
-  reservations.forEach((r) => {
-    const s = new Date(r.start);
-    const e = new Date(r.end);
-    for (let i = 0; i < hours.length; i++) {
-      const h = hours[i];
-      const slotStart = new Date(s);
-      slotStart.setHours(h, 0, 0, 0);
-      const slotEnd = new Date(s);
-      slotEnd.setHours(h + 1, 0, 0, 0);
-      // if overlap
-      if (s < slotEnd && e > slotStart) reserved[i] = true;
-    }
-  });
+  // local [start, end) of an hour slot on the selected day
+  const dayStart = new Date(`${selectedDate}T00:00:00`);
+  const slotRange = (h: number) => {
+    const s = new Date(dayStart);
+    s.setHours(h, 0, 0, 0);
+    const e = new Date(dayStart);
+    e.setHours(h + 1, 0, 0, 0);
+    return [s, e] as const;
+  };
+  const overlaps = (s: Date, e: Date, h: number) => {
+    const [slotStart, slotEnd] = slotRange(h);
+    return s < slotEnd && e > slotStart;
+  };
+
+  // what occupies each hour: a reservation, or someone else's assigned-seat schedule (your own assignment doesn't block you)
+  const reserved = hours.map((h) => reservations.some((r) => overlaps(new Date(r.start), new Date(r.end), h)));
+  const assigned = hours.map((h) => blocks.find((b) => b.userId !== session?.user?.id && overlaps(new Date(b.start), new Date(b.end), h)) || null);
+  const unavailable = hours.map((_, i) => reserved[i] || !!assigned[i]);
 
   const [selStart, setSelStart] = React.useState<number | null>(null);
   const [selEnd, setSelEnd] = React.useState<number | null>(null); // exclusive index
   const [dragging, setDragging] = React.useState<{ anchor: number } | null>(null);
+  const [includeChildren, setIncludeChildren] = React.useState(false);
+  const [status, setStatus] = React.useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    clearSelection();
+    setStatus(null);
+  }, [selectedDate, locationId]);
 
   function clearSelection() {
     setSelStart(null);
@@ -238,100 +272,67 @@ function DaySchedule({ reservations, onRequest, selectedDate, locationId, descen
   function setRangeFromAnchor(anchor: number, index: number) {
     const s = Math.min(anchor, index);
     const e = Math.max(anchor, index) + 1;
-    // ensure no reserved hours in [s,e)
-    for (let i = s; i < e; i++) if (reserved[i]) return false;
+    for (let i = s; i < e; i++) if (unavailable[i]) return false;
     setSelStart(s);
     setSelEnd(e);
     return true;
   }
 
-  function onHourMouseDown(i: number) {
-    if (reserved[i]) return;
-    if (selStart === null) {
-      // start new selection
+  // Mouse: press and drag. Touch: tap a start hour, then tap an end hour (dragging would fight page scrolling).
+  function onHourPointerDown(i: number, e: React.PointerEvent) {
+    if (unavailable[i]) return;
+    const drag = e.pointerType === 'mouse';
+    setStatus(null);
+    if (selStart === null || selEnd === null) {
       setSelStart(i);
       setSelEnd(i + 1);
-      setDragging({ anchor: i });
+      if (drag) setDragging({ anchor: i });
       return;
     }
-    // if selection exists, decide whether to adjust start or end
-    const currentStart = selStart!;
-    const currentEnd = selEnd!;
-    const distToStart = Math.abs(i - currentStart);
-    const distToEnd = Math.abs(i - (currentEnd - 1));
-    if (i === currentStart) {
+    if (i === selStart || i === selEnd - 1) {
       clearSelection();
       return;
     }
-    if (i === currentEnd - 1) {
-      clearSelection();
-      return;
-    }
-    if (distToStart <= distToEnd) {
-      // adjust start
-      // ensure no reserved between i and currentEnd
-      const s = Math.min(i, currentEnd - 1);
-      const e = Math.max(i, currentEnd - 1) + 1;
-      for (let k = s; k < e; k++) if (reserved[k]) return;
-      setSelStart(s);
-      setSelEnd(e);
-      setDragging({ anchor: i });
-    } else {
-      // adjust end
-      const s = Math.min(currentStart, i);
-      const e = Math.max(currentStart, i) + 1;
-      for (let k = s; k < e; k++) if (reserved[k]) return;
-      setSelStart(s);
-      setSelEnd(e);
-      setDragging({ anchor: currentStart });
-    }
+    // move whichever end of the selection is nearer
+    const anchor = Math.abs(i - selStart) <= Math.abs(i - (selEnd - 1)) ? selEnd - 1 : selStart;
+    if (setRangeFromAnchor(anchor, i) && drag) setDragging({ anchor });
   }
 
-  function onHourMouseEnter(i: number) {
+  function onHourPointerEnter(i: number) {
     if (!dragging) return;
     setRangeFromAnchor(dragging.anchor, i);
   }
 
-  function onMouseUp() {
-    setDragging(null);
-  }
-
   React.useEffect(() => {
-    window.addEventListener('mouseup', onMouseUp);
-    return () => window.removeEventListener('mouseup', onMouseUp);
+    const up = () => setDragging(null);
+    window.addEventListener('pointerup', up);
+    return () => window.removeEventListener('pointerup', up);
   }, []);
 
   async function confirmRequest() {
-    if (selStart === null || selEnd === null) return alert('No selection');
+    if (selStart === null || selEnd === null) return;
     const startH = hours[selStart];
     const endH = hours[selEnd - 1] + 1; // exclusive
-    // construct local Date objects (no trailing Z) so the intended local hour is preserved.
-    const startLocal = new Date(`${selectedDate}T${String(startH).padStart(2, '0')}:00:00`);
-    const endLocal = new Date(`${selectedDate}T${String(endH).padStart(2, '0')}:00:00`);
-    const startIso = startLocal.toISOString();
-    const endIso = endLocal.toISOString();
-    // ask for userid
-    const userId = prompt('Enter your user id to create the reservation (internal id)');
-    if (!userId) return;
-    // only ask to include sublocations when there are descendants
-    let includeChildren = false;
-    if (descendants && descendants.length > 0) {
-      includeChildren = confirm(`Include sublocations (${descendants.length})?`);
-    }
-
+    const [startLocal] = slotRange(startH);
+    const [, endLocal] = slotRange(endH - 1);
+    setBusy(true);
+    setStatus(null);
     try {
-      const res = await fetch('/api/reservations/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locationId, userId, start: startIso, end: endIso, includeChildren }) });
+      // the server books for the signed-in user
+      const res = await fetch('/api/reservations/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locationId, start: startLocal.toISOString(), end: endLocal.toISOString(), includeChildren: includeChildren && descendants.length > 0 }) });
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const j = await res.json();
-        alert('Failed creating reservation: ' + JSON.stringify(j));
+        setStatus({ ok: false, text: j.error || 'Could not create the reservation' });
       } else {
-        alert('Reservation requested');
-        onRequest?.(startIso, endIso, includeChildren);
+        setStatus({ ok: true, text: `Reserved ${fmtHour(startH)} – ${fmtHour(endH)}` });
         clearSelection();
+        onReserved?.();
       }
     } catch (err) {
       console.error(err);
-      alert('Error creating reservation');
+      setStatus({ ok: false, text: 'Network error creating the reservation' });
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -339,16 +340,19 @@ function DaySchedule({ reservations, onRequest, selectedDate, locationId, descen
     <div>
       <div className="schedule">
         {hours.map((h, idx) => {
-          const isReserved = reserved[idx];
           const isSelected = selStart !== null && selEnd !== null && idx >= selStart && idx < selEnd;
+          const block = assigned[idx];
+          // label the first hour of each assigned run
+          const showAssignee = block && (idx === 0 || assigned[idx - 1]?.id !== block.id);
           return (
             <div key={h}
-              className={'schedule-slot' + (isReserved ? ' reserved' : '') + (isSelected ? ' selected' : '')}
-              onMouseDown={() => onHourMouseDown(idx)}
-              onMouseEnter={() => onHourMouseEnter(idx)}
-              style={{ height: 30 }}>
-              <div className="time">{(h % 12) === 0 ? 12 : (h % 12)} {h < 12 ? 'am' : 'pm'}</div>
-              <div className="fill" />
+              className={'schedule-slot' + (reserved[idx] ? ' reserved' : '') + (block ? ' assigned' : '') + (isSelected ? ' selected' : '')}
+              onPointerDown={(e) => onHourPointerDown(idx, e)}
+              onPointerEnter={() => onHourPointerEnter(idx)}
+              title={block ? `Assigned seat: ${block.userName}${block.locationId !== locationId ? ` (${block.locationLabel})` : ''}` : undefined}
+              style={{ height: 28 }}>
+              <div className="time">{fmtHour(h)}</div>
+              <div className="fill">{showAssignee && <span className="slot-label">Assigned · {block!.userName}</span>}</div>
             </div>
           );
         })}
@@ -357,15 +361,23 @@ function DaySchedule({ reservations, onRequest, selectedDate, locationId, descen
         <span className="l-free">Available</span>
         <span className="l-sel">Selected</span>
         <span className="l-res">Reserved</span>
+        <span className="l-asg">Assigned seat</span>
       </div>
 
+      {descendants.length > 0 && (
+        <label className="hint" style={{ display: 'block', marginTop: 10 }}>
+          <input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} /> Also reserve the {descendants.length} space(s) inside
+        </label>
+      )}
+
       <div className="actions" style={{ marginTop: 12 }}>
-        <button className="btn-primary" onClick={confirmRequest} disabled={selStart === null} style={{ width: '100%' }}>
-          {selStart !== null && selEnd !== null
-            ? `Request ${fmtHour(hours[selStart])} – ${fmtHour(hours[selEnd - 1] + 1)}`
-            : 'Drag over hours to select'}
+        <button className="btn-primary" onClick={confirmRequest} disabled={selStart === null || busy} style={{ width: '100%', padding: '12px' }}>
+          {busy ? 'Reserving…' : selStart !== null && selEnd !== null
+            ? `Reserve ${fmtHour(hours[selStart])} – ${fmtHour(hours[selEnd - 1] + 1)}`
+            : 'Tap or drag over hours to select'}
         </button>
       </div>
+      {status && <div className={'alert' + (status.ok ? '' : ' alert-error')}>{status.text}</div>}
     </div>
   );
 }

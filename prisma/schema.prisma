@@ -12,11 +12,16 @@ model User {
   email         String   @unique
   name          String?
   active        Boolean  @default(true)
-  isAdmin       Boolean  @default(false)
+  // STAFF | MANAGER | ADMIN
+  role          String   @default("STAFF")
   adObjectId    String?  @unique
-  defaultLocationId String? 
-  defaultWorkers DefaultWorker[]
+  manager       User?    @relation("UserManager", fields: [managerId], references: [id])
+  managerId     String?
+  reports       User[]   @relation("UserManager")
   reservations  Reservation[]
+  seatAssignments      SeatAssignment[] @relation("AssignmentUser")
+  requestedAssignments SeatAssignment[] @relation("AssignmentRequester")
+  reviewedAssignments  SeatAssignment[] @relation("AssignmentReviewer")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -26,6 +31,8 @@ model Building {
   name       String
   address    String?
   floorCount Int      @default(0)
+  // IANA zone (e.g. "America/Chicago") used to interpret seat assignment hours; falls back to APP_TIMEZONE
+  timezone   String?
   floors     Floor[]
 }
 
@@ -51,7 +58,7 @@ model Location {
   children     Location[] @relation("LocationParent")
   polygon      LocationPolygon?
   imageUrl     String?
-  defaultWorkers DefaultWorker[]
+  seatAssignments SeatAssignment[]
   reservations Reservation[]
 }
 
@@ -64,12 +71,36 @@ model LocationPolygon {
   editable   Boolean  @default(true)
 }
 
-model DefaultWorker {
-  id         String   @id @default(cuid())
-  location   Location @relation(fields: [locationId], references: [id])
-  locationId String
-  user       User     @relation(fields: [userId], references: [id])
-  userId     String
+// A recurring weekly claim on a location by one staff member (their assigned seat).
+// While APPROVED, matching days/hours cannot be reserved by anyone else.
+model SeatAssignment {
+  id            String    @id @default(cuid())
+  location      Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  locationId    String
+  user          User      @relation("AssignmentUser", fields: [userId], references: [id])
+  userId        String
+  // comma-separated weekdays, 0 = Sunday ... 6 = Saturday, e.g. "1,2,3,4,5"
+  daysOfWeek    String
+  // wall-clock minutes from midnight in the building's timezone; end is exclusive
+  startMinute   Int
+  endMinute     Int
+  // effective local dates (YYYY-MM-DD); endDate null = open-ended
+  startDate     String
+  endDate       String?
+  // PENDING | APPROVED | REJECTED | CANCELLED
+  status        String    @default("PENDING")
+  note          String?
+  requestedBy   User      @relation("AssignmentRequester", fields: [requestedById], references: [id])
+  requestedById String
+  reviewedBy    User?     @relation("AssignmentReviewer", fields: [reviewedById], references: [id])
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewNote    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([locationId, status])
+  @@index([userId])
 }
 
 model Reservation {

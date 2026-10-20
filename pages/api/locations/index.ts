@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  // reads: any signed-in user; changes: admins only
+  if (!(await requireUser(req, res, ...(req.method === 'GET' ? [] : (['ADMIN'] as const))))) return;
   if (req.method === 'GET') {
     const { floorId } = req.query as { floorId?: string };
     const where: any = {};

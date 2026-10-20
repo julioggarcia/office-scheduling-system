@@ -1,9 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
+import { canActFor, requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  const actor = await requireUser(req, res);
+  if (!actor) return;
   const { id } = req.query as { id: string };
   if (!id) return res.status(400).json({ error: 'Missing id' });
+
+  const existing = await prisma.reservation.findUnique({ where: { id }, select: { userId: true } });
+  if (!existing) return res.status(404).json({ error: 'Not found' });
+  // owners can cancel their own; admins and the owner's manager can cancel or edit
+  const isOwner = existing.userId === actor.id;
+  const canManage = actor.role === 'ADMIN' || (!isOwner && (await canActFor(actor, existing.userId)));
+  if (req.method === 'DELETE' ? !(isOwner || canManage) : !canManage) return res.status(403).json({ error: 'Not allowed' });
 
   if (req.method === 'DELETE') {
     try {

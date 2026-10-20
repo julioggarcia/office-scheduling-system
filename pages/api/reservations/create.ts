@@ -1,6 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
 import { sendMail } from '../../../lib/nodemailer';
+import { canActFor, normalizeEmail, requireUser } from '../../../lib/auth';
+import { describeSchedule, findBlockingAssignment, relatedLocationIds } from '../../../lib/assignments';
 
 async function gatherDescendants(tx: any, id: string) {
   const ids = [id];
@@ -33,39 +35,30 @@ async function gatherAncestors(tx: any, id: string) {
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
+  const actor = await requireUser(req, res);
+  if (!actor) return;
+  // userId is optional: defaults to the signed-in user; admins/managers may book for someone else (id or email)
   const { locationId, userId, start, end, includeChildren } = req.body;
-  if (!locationId || !userId || !start || !end) return res.status(400).json({ error: 'Missing params' });
+  if (!locationId || !start || !end) return res.status(400).json({ error: 'Missing params' });
 
   const startDate = new Date(start);
   const endDate = new Date(end);
-  if (startDate >= endDate) return res.status(400).json({ error: 'Invalid date range' });
+  if (isNaN(startDate.getTime()) || isNaN(endDate.getTime()) || startDate >= endDate) return res.status(400).json({ error: 'Invalid date range' });
 
   try {
-    // allow any userId temporarily: find or create a placeholder user when missing
-    let userRecord = await prisma.user.findUnique({ where: { id: userId } });
-    if (!userRecord) {
-      // derive an email for placeholder users; prefer if userId looks like an email
-      const derivedEmail = typeof userId === 'string' && userId.includes('@') ? userId : `${userId.replace(/[^a-z0-9_.-]/gi, '') || 'user'}@placeholder.local`;
-      try {
-        userRecord = await prisma.user.create({ data: { id: userId, email: derivedEmail, name: userId } });
-      } catch (createErr) {
-        console.warn('Failed to create placeholder user:', createErr);
-        // if email unique constraint caused failure, try to find user by email
-        const byEmail = await prisma.user.findUnique({ where: { email: derivedEmail } }).catch(() => null);
-        if (byEmail) {
-          userRecord = byEmail;
-        } else {
-          // fallback to a generic placeholder user id
-          let fallback = await prisma.user.findUnique({ where: { email: 'placeholder@local' } }).catch(() => null);
-          if (!fallback) {
-            fallback = await prisma.user.create({ data: { email: 'placeholder@local', name: 'Placeholder User' } });
-          }
-          userRecord = fallback;
-        }
-      }
+    let userRecord = actor;
+    if (userId && userId !== actor.id) {
+      const target = await prisma.user.findFirst({ where: { OR: [{ id: userId }, { email: normalizeEmail(String(userId)) }] } });
+      if (!target || !target.active) return res.status(404).json({ error: 'Staff member not found' });
+      if (!(await canActFor(actor, target.id))) return res.status(403).json({ error: 'You can only book for yourself or your direct reports' });
+      userRecord = target;
     }
 
     const result = await prisma.$transaction(async (tx) => {
+      // assigned seats: someone else's approved schedule on this location, its parent or its children blocks booking
+      const blocking = await findBlockingAssignment(tx, await relatedLocationIds(tx, locationId), startDate, endDate, userRecord.id);
+      if (blocking) throw new Error(`${blocking.location.label} is assigned to ${blocking.user.name || blocking.user.email} at that time (${describeSchedule(blocking)})`);
+
       let locationIds = [locationId];
       if (includeChildren) {
         locationIds = await gatherDescendants(tx, locationId);
@@ -92,7 +85,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // create reservations for all affected locationIds
       const created: any[] = [];
       for (const lid of locationIds) {
-        const r = await tx.reservation.create({ data: { locationId: lid, userId: userRecord!.id, start: startDate, end: endDate, approved: true } });
+        const r = await tx.reservation.create({ data: { locationId: lid, userId: userRecord.id, start: startDate, end: endDate, approved: true } });
         created.push(r);
       }
       return created;
@@ -100,7 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // send notification (best-effort) to user
     try {
-      const user = await prisma.user.findUnique({ where: { id: userRecord!.id } });
+      const user = await prisma.user.findUnique({ where: { id: userRecord.id } });
       if (user?.email) {
         await sendMail({ to: user.email, subject: 'Reservation confirmed', text: `Your reservation for location ${locationId} from ${start} to ${end} is confirmed.` });
       }

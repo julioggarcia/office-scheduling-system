@@ -1,8 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).end();
+  if (!(await requireUser(req, res, 'ADMIN'))) return;
   const { buildingId, floorId, svg, image } = req.body;
   if (!buildingId || !floorId) return res.status(400).json({ error: 'buildingId and floorId required' });
 

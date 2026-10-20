@@ -1,7 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
+import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (!(await requireUser(req, res))) return;
   const { id } = req.query as { id: string };
   if (req.method === 'GET') {
     try {

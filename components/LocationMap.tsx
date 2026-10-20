@@ -34,8 +34,9 @@ export default function LocationMap({ imageUrl, polygons, onPolygonClick, select
   const selectedLabel = polygons?.find((p) => p.id === selectedId)?.label;
 
   return (
-    <div ref={wrapperRef} className="map-frame">
-      <svg width={width} height={height}>
+    <div ref={wrapperRef} className="map-frame map-responsive">
+      {/* viewBox keeps polygon coordinates fixed while the map shrinks to fit phone screens */}
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ height: 'auto', aspectRatio: `${width} / ${height}` }}>
         {imageUrl && <image href={imageUrl} width={width} height={height} preserveAspectRatio="xMidYMid meet" />}
         {polygons?.map((poly) => (
           <g key={poly.id}>
