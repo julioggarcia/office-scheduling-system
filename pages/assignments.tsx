@@ -58,6 +58,8 @@ function RequestForm({ role, meId, onCreated }: { role: string; meId: string; on
   const [locationId, setLocationId] = useState('');
   const [people, setPeople] = useState<Person[]>([]);
   const [userId, setUserId] = useState(meId);
+  const [personQuery, setPersonQuery] = useState('');
+  const [personRole, setPersonRole] = useState('');
   const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
@@ -87,6 +89,25 @@ function RequestForm({ role, meId, onCreated }: { role: string; meId: string; on
   }, [floorId]);
 
   const floors = buildings.find((b) => b.id === buildingId)?.floors ?? [];
+
+  const roles = useMemo(() => Array.from(new Set(people.map((p) => p.role))).sort(), [people]);
+  const filtering = !!personQuery.trim() || !!personRole;
+  const matches = useMemo(() => {
+    const q = personQuery.trim().toLowerCase();
+    return people.filter((p) =>
+      (!personRole || p.role === personRole) &&
+      (!q || (p.name ?? '').toLowerCase().includes(q) || p.email.toLowerCase().includes(q)));
+  }, [people, personQuery, personRole]);
+  const matchCount = matches.length;
+  useEffect(() => {
+    if (filtering && matches.length && !matches.some((p) => p.id === userId)) setUserId(matches[0].id);
+  }, [matches]);
+  // Keep the current selection in the dropdown even when it doesn't match, so the select never shows a person other than userId.
+  const filteredPeople = useMemo(() => {
+    if (matches.some((p) => p.id === userId)) return matches;
+    const selected = people.find((p) => p.id === userId);
+    return selected ? [selected, ...matches] : matches;
+  }, [matches, people, userId]);
 
   async function submit(cancelConflicts = false) {
     setMessage(null);
@@ -119,11 +140,26 @@ function RequestForm({ role, meId, onCreated }: { role: string; meId: string; on
       </p>
 
       {canPickPerson && (
-        <div className="field">
-          <label>Staff member</label>
-          <select value={userId} onChange={(e) => setUserId(e.target.value)}>
-            {people.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `Me (${personName(p)})` : personName(p)}</option>)}
-          </select>
+        <div className="row" style={{ marginBottom: 16 }}>
+          <div className="field">
+            <label>Find staff</label>
+            <input placeholder="Search name or email" value={personQuery} onChange={(e) => setPersonQuery(e.target.value)} />
+          </div>
+          {roles.length > 1 && (
+            <div className="field">
+              <label>Role</label>
+              <select value={personRole} onChange={(e) => setPersonRole(e.target.value)}>
+                <option value="">All roles</option>
+                {roles.map((r) => <option key={r} value={r}>{r.charAt(0) + r.slice(1).toLowerCase()}</option>)}
+              </select>
+            </div>
+          )}
+          <div className="field">
+            <label>Staff member{filtering ? ` (${matchCount} of ${people.length})` : ''}</label>
+            <select value={userId} onChange={(e) => setUserId(e.target.value)}>
+              {filteredPeople.map((p) => <option key={p.id} value={p.id}>{p.id === meId ? `Me (${personName(p)})` : personName(p)}</option>)}
+            </select>
+          </div>
         </div>
       )}
 

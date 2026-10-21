@@ -11,12 +11,22 @@ function localIsoDate(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+type FloorView = { id: string; name: string; imageContent?: string | null; locations: Array<{ id: string; label?: string; parentId?: string | null; polygon?: { points: string } | null }> };
+
 type BuildingView = {
   id: string;
   name: string;
   floorCount: number;
-  firstFloor?: { id: string; imageContent?: string | null; locations: Array<{ id: string; label?: string; parentId?: string | null; polygon?: { points: string } | null }> } | null;
+  floors: FloorView[]; // lowest floor first
 };
+
+function Triangle({ dir }: { dir: 'up' | 'down' }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+      <path d={dir === 'up' ? 'M7 2 L13 12 L1 12 Z' : 'M7 12 L13 2 L1 2 Z'} fill="currentColor" />
+    </svg>
+  );
+}
 
 const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
   const [openMap, setOpenMap] = useState<string | null>(buildings.length ? buildings[0].id : null);
@@ -27,6 +37,17 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
   const [currentDescendants, setCurrentDescendants] = useState<string[]>([]);
   const [blocks, setBlocks] = useState<AssignmentBlock[]>([]);
   const [reloadKey, setReloadKey] = useState(0);
+  // index into building.floors of the floor being shown, per building (defaults to the lowest)
+  const [floorIndex, setFloorIndex] = useState<Record<string, number>>({});
+
+  function changeFloor(b: BuildingView, delta: number) {
+    const cur = floorIndex[b.id] ?? 0;
+    const next = Math.min(Math.max(cur + delta, 0), b.floors.length - 1);
+    if (next === cur) return;
+    setFloorIndex((prev) => ({ ...prev, [b.id]: next }));
+    // the selected space belongs to the floor we're leaving
+    if (selectedPolygon?.buildingId === b.id) setSelectedPolygon(null);
+  }
 
   function getAncestors(locations: { id: string; parentId?: string | null }[], id: string) {
     const out: string[] = [];
@@ -58,11 +79,9 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
     return out;
   }
 
-  function bFirstFloorLocationsForSelected(buildingId: string, floorId: string) {
-    const b = buildings.find((bb) => bb.id === buildingId);
-    if (!b || !b.firstFloor) return [] as { id: string; parentId?: string | null }[];
-    if (b.firstFloor.id !== floorId) return b.firstFloor.locations as any;
-    return b.firstFloor.locations as any;
+  function floorLocations(buildingId: string, floorId: string) {
+    const f = buildings.find((bb) => bb.id === buildingId)?.floors.find((ff) => ff.id === floorId);
+    return (f?.locations ?? []) as { id: string; parentId?: string | null }[];
   }
 
   useEffect(() => {
@@ -76,7 +95,7 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
     // when polygon selection changes, fetch reservations for that polygon's location and selectedDate
     const fetchRes = async () => {
       // compute location ids: include descendants so parent reflects child reservations
-      const locs = bFirstFloorLocationsForSelected(selectedPolygon.buildingId, selectedPolygon.floorId);
+      const locs = floorLocations(selectedPolygon.buildingId, selectedPolygon.floorId);
       const descendants = getDescendants(locs, selectedPolygon.polygonId);
       const ids = [selectedPolygon.polygonId, ...descendants];
       const q = ids.map(encodeURIComponent).join(',');
@@ -163,7 +182,13 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
         </div>
       )}
 
-      {buildings.map((b) => (
+      {buildings.map((b) => {
+        const idx = Math.min(floorIndex[b.id] ?? 0, Math.max(b.floors.length - 1, 0));
+        const floor = b.floors[idx];
+        const isTop = idx >= b.floors.length - 1;
+        const isBottom = idx === 0;
+        const selectedHere = selectedPolygon && floor && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === floor.id ? selectedPolygon : null;
+        return (
         <section key={b.id} className="card">
           <div className="card-header">
             <div>
@@ -177,35 +202,46 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
             })}>{openMap === b.id ? 'Hide map' : 'Show map'}</button>
           </div>
 
-          {openMap === b.id && !b.firstFloor && (
+          {openMap === b.id && !floor && (
             <div className="alert">This building has no floors yet.</div>
           )}
 
-          {openMap === b.id && b.firstFloor && (
+          {openMap === b.id && floor && (
             <div className="reserve-layout">
-              <div className="map-scroll">
-                <LocationMap
-                  imageUrl={b.firstFloor.imageContent ?? undefined}
-                  polygons={b.firstFloor.locations.map((l) => ({ id: l.id, points: l.polygon?.points ?? '', label: l.label, parentId: l.parentId ?? undefined }))}
-                  onPolygonClick={(pid) => setSelectedPolygon({ buildingId: b.id, floorId: b.firstFloor!.id, polygonId: pid })}
-                  selectedId={selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor!.id ? selectedPolygon.polygonId : undefined}
-                  highlightedIds={
-                    selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor!.id ?
-                      getDescendants(b.firstFloor.locations as any, selectedPolygon.polygonId) : []
-                  }
-                />
+              <div className="floor-map">
+                {b.floors.length > 1 && (
+                  <div className="floor-nav" role="group" aria-label="Floor">
+                    <button type="button" className="floor-nav-btn" onClick={() => changeFloor(b, 1)} disabled={isTop} aria-label="Go up a floor" title={isTop ? 'Top floor' : 'Go up a floor'}>
+                      <Triangle dir="up" />
+                    </button>
+                    <div className="floor-nav-label" aria-live="polite">{floor.name}</div>
+                    <button type="button" className="floor-nav-btn" onClick={() => changeFloor(b, -1)} disabled={isBottom} aria-label="Go down a floor" title={isBottom ? 'Lowest floor' : 'Go down a floor'}>
+                      <Triangle dir="down" />
+                    </button>
+                  </div>
+                )}
+                <div className="map-scroll">
+                  <LocationMap
+                    key={floor.id}
+                    imageUrl={floor.imageContent ?? undefined}
+                    polygons={floor.locations.map((l) => ({ id: l.id, points: l.polygon?.points ?? '', label: l.label, parentId: l.parentId ?? undefined }))}
+                    onPolygonClick={(pid) => setSelectedPolygon({ buildingId: b.id, floorId: floor.id, polygonId: pid })}
+                    selectedId={selectedHere ? selectedHere.polygonId : undefined}
+                    highlightedIds={selectedHere ? getDescendants(floor.locations as any, selectedHere.polygonId) : []}
+                  />
+                </div>
               </div>
 
               <div className="reserve-side">
-                {selectedPolygon && selectedPolygon.buildingId === b.id && selectedPolygon.floorId === b.firstFloor.id ? (
+                {selectedHere ? (
                   <>
-                    {renderCalendar(b.id, b.firstFloor.id)}
+                    {renderCalendar(b.id, floor.id)}
                     <div className="panel">
                       <div className="panel-title">
-                        <span>{b.firstFloor.locations.find((l) => l.id === selectedPolygon.polygonId)?.label ?? 'Schedule'}</span>
+                        <span>{floor.locations.find((l) => l.id === selectedHere.polygonId)?.label ?? 'Schedule'}</span>
                         <span className="hint">{new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
                       </div>
-                      <DaySchedule reservations={reservations} blocks={blocks} selectedDate={selectedDate} locationId={selectedPolygon.polygonId} descendants={currentDescendants} onReserved={() => setReloadKey((k) => k + 1)} />
+                      <DaySchedule reservations={reservations} blocks={blocks} selectedDate={selectedDate} locationId={selectedHere.polygonId} descendants={currentDescendants} onReserved={() => setReloadKey((k) => k + 1)} />
                     </div>
                   </>
                 ) : (
@@ -215,10 +251,16 @@ const Home: NextPage<{ buildings: BuildingView[] }> = ({ buildings }) => {
             </div>
           )}
         </section>
-      ))}
+        );
+      })}
     </div>
   );
 };
+
+// label a run of hour boxes by the boxes themselves: 3pm alone is "3pm", 8am through 11am is "8am – 11am"
+function fmtHours(first: number, last: number) {
+  return first === last ? fmtHour(first) : `${fmtHour(first)} – ${fmtHour(last)}`;
+}
 
 function fmtHour(h: number) {
   return `${(h % 12) === 0 ? 12 : (h % 12)}${h < 12 || h === 24 ? 'am' : 'pm'}`;
@@ -251,13 +293,24 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
   const reserved = hours.map((h) => reservations.some((r) => overlaps(new Date(r.start), new Date(r.end), h)));
   const assigned = hours.map((h) => blocks.find((b) => b.userId !== session?.user?.id && overlaps(new Date(b.start), new Date(b.end), h)) || null);
   const unavailable = hours.map((_, i) => reserved[i] || !!assigned[i]);
+  // consecutive hours held by the same assignment, listed under the grid since chips are too small to name the person
+  const assignedRuns: { block: AssignmentBlock; from: number; to: number }[] = [];
+  assigned.forEach((b, i) => {
+    if (!b) return;
+    const last = assignedRuns[assignedRuns.length - 1];
+    if (last && last.block.id === b.id && last.to === i - 1) last.to = i;
+    else assignedRuns.push({ block: b, from: i, to: i });
+  });
 
   const [selStart, setSelStart] = React.useState<number | null>(null);
-  const [selEnd, setSelEnd] = React.useState<number | null>(null); // exclusive index
+  // each hour box is a whole hour: picking 9am then 10am books 9:00 until the end of the 10am hour
+  const [selEnd, setSelEnd] = React.useState<number | null>(null); // index of the last selected box, null = just selStart
   const [dragging, setDragging] = React.useState<{ anchor: number } | null>(null);
   const [includeChildren, setIncludeChildren] = React.useState(false);
   const [status, setStatus] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
+  // firstH/lastH are box labels; the booking runs from firstH to lastH + 1
+  const range = selStart === null ? null : { firstH: hours[selStart], lastH: hours[selEnd ?? selStart] };
 
   React.useEffect(() => {
     clearSelection();
@@ -271,31 +324,33 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
 
   function setRangeFromAnchor(anchor: number, index: number) {
     const s = Math.min(anchor, index);
-    const e = Math.max(anchor, index) + 1;
-    for (let i = s; i < e; i++) if (unavailable[i]) return false;
+    const e = Math.max(anchor, index);
+    for (let i = s; i <= e; i++) if (unavailable[i]) return false;
     setSelStart(s);
-    setSelEnd(e);
+    setSelEnd(e > s ? e : null);
     return true;
   }
 
   // Mouse: press and drag. Touch: tap a start hour, then tap an end hour (dragging would fight page scrolling).
   function onHourPointerDown(i: number, e: React.PointerEvent) {
-    if (unavailable[i]) return;
-    const drag = e.pointerType === 'mouse';
+    onHourPick(i, e.pointerType === 'mouse');
+  }
+
+  function onHourPick(i: number, drag: boolean) {
     setStatus(null);
-    if (selStart === null || selEnd === null) {
-      setSelStart(i);
-      setSelEnd(i + 1);
-      if (drag) setDragging({ anchor: i });
-      return;
-    }
-    if (i === selStart || i === selEnd - 1) {
+    if (selStart !== null && (i === selStart || i === selEnd)) {
       clearSelection();
       return;
     }
-    // move whichever end of the selection is nearer
-    const anchor = Math.abs(i - selStart) <= Math.abs(i - (selEnd - 1)) ? selEnd - 1 : selStart;
-    if (setRangeFromAnchor(anchor, i) && drag) setDragging({ anchor });
+    // second pick completes the range; any pick after that starts a new one
+    if (selStart !== null && selEnd === null) {
+      if (setRangeFromAnchor(selStart, i) && drag) setDragging({ anchor: selStart });
+      return;
+    }
+    if (unavailable[i]) return;
+    setSelStart(i);
+    setSelEnd(null);
+    if (drag) setDragging({ anchor: i });
   }
 
   function onHourPointerEnter(i: number) {
@@ -310,9 +365,9 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
   }, []);
 
   async function confirmRequest() {
-    if (selStart === null || selEnd === null) return;
-    const startH = hours[selStart];
-    const endH = hours[selEnd - 1] + 1; // exclusive
+    if (!range) return;
+    const startH = range.firstH;
+    const endH = range.lastH + 1; // exclusive
     const [startLocal] = slotRange(startH);
     const [, endLocal] = slotRange(endH - 1);
     setBusy(true);
@@ -324,7 +379,7 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
       if (!res.ok) {
         setStatus({ ok: false, text: j.error || 'Could not create the reservation' });
       } else {
-        setStatus({ ok: true, text: `Reserved ${fmtHour(startH)} – ${fmtHour(endH)}` });
+        setStatus({ ok: true, text: `Reserved ${fmtHours(range.firstH, range.lastH)}` });
         clearSelection();
         onReserved?.();
       }
@@ -338,22 +393,39 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
 
   return (
     <div>
-      <div className="schedule">
+      <div className="hour-summary">
+        {range ? (
+          <>
+            <strong>{fmtHours(range.firstH, range.lastH)}</strong>
+            <span className="hint">{range.lastH - range.firstH + 1} {range.lastH === range.firstH ? 'hour' : 'hours'}</span>
+            <button type="button" className="btn-sm hour-clear" onClick={clearSelection}>Clear</button>
+          </>
+        ) : (
+          <span className="hint">Pick a start hour, then an end hour</span>
+        )}
+      </div>
+      <div className="hour-grid">
         {hours.map((h, idx) => {
-          const isSelected = selStart !== null && selEnd !== null && idx >= selStart && idx < selEnd;
+          const isSelected = selStart !== null && idx >= selStart && idx <= (selEnd ?? selStart);
+          const isEdge = idx === selStart || idx === selEnd;
           const block = assigned[idx];
-          // label the first hour of each assigned run
-          const showAssignee = block && (idx === 0 || assigned[idx - 1]?.id !== block.id);
+          const cls = ['hour-chip'];
+          if (reserved[idx]) cls.push('reserved');
+          else if (block) cls.push('assigned');
+          if (isSelected) cls.push('selected');
+          if (isEdge) cls.push('edge');
           return (
-            <div key={h}
-              className={'schedule-slot' + (reserved[idx] ? ' reserved' : '') + (block ? ' assigned' : '') + (isSelected ? ' selected' : '')}
+            <button key={h} type="button"
+              className={cls.join(' ')}
+              aria-disabled={unavailable[idx]}
+              aria-pressed={isSelected}
               onPointerDown={(e) => onHourPointerDown(idx, e)}
               onPointerEnter={() => onHourPointerEnter(idx)}
-              title={block ? `Assigned seat: ${block.userName}${block.locationId !== locationId ? ` (${block.locationLabel})` : ''}` : undefined}
-              style={{ height: 28 }}>
-              <div className="time">{fmtHour(h)}</div>
-              <div className="fill">{showAssignee && <span className="slot-label">Assigned · {block!.userName}</span>}</div>
-            </div>
+              // keyboard activation (pointer clicks are handled on pointerdown)
+              onClick={(e) => { if (e.detail === 0) onHourPick(idx, false); }}
+              title={reserved[idx] ? 'Reserved' : block ? `Assigned seat: ${block.userName}${block.locationId !== locationId ? ` (${block.locationLabel})` : ''}` : undefined}>
+              {fmtHour(h)}
+            </button>
           );
         })}
       </div>
@@ -363,6 +435,17 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
         <span className="l-res">Reserved</span>
         <span className="l-asg">Assigned seat</span>
       </div>
+      {assignedRuns.length > 0 && (
+        <ul className="assigned-list">
+          {assignedRuns.map((run) => (
+            <li key={run.block.id + run.from}>
+              <span className="assigned-dot" aria-hidden />
+              {fmtHours(hours[run.from], hours[run.to])} · assigned to <strong>{run.block.userName}</strong>
+              {run.block.locationId !== locationId && <span className="hint"> ({run.block.locationLabel})</span>}
+            </li>
+          ))}
+        </ul>
+      )}
 
       {descendants.length > 0 && (
         <label className="hint" style={{ display: 'block', marginTop: 10 }}>
@@ -371,10 +454,10 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
       )}
 
       <div className="actions" style={{ marginTop: 12 }}>
-        <button className="btn-primary" onClick={confirmRequest} disabled={selStart === null || busy} style={{ width: '100%', padding: '12px' }}>
-          {busy ? 'Reserving…' : selStart !== null && selEnd !== null
-            ? `Reserve ${fmtHour(hours[selStart])} – ${fmtHour(hours[selEnd - 1] + 1)}`
-            : 'Tap or drag over hours to select'}
+        <button className="btn-primary" onClick={confirmRequest} disabled={selStart === null || busy} style={{ width: '100%', padding: '10px' }}>
+          {busy ? 'Reserving…' : range
+            ? `Reserve ${fmtHours(range.firstH, range.lastH)}`
+            : 'Select hours to reserve'}
         </button>
       </div>
       {status && <div className={'alert' + (status.ok ? '' : ' alert-error')}>{status.text}</div>}
@@ -396,15 +479,17 @@ export async function getServerSideProps() {
     }
   });
 
-  const out: BuildingView[] = buildings.map((b) => {
-    const first = b.floors && b.floors.length > 0 ? b.floors[0] : null;
-    return {
-      id: b.id,
-      name: b.name,
-      floorCount: b.floors.length,
-    firstFloor: first ? { id: first.id, imageContent: first.imageContent, locations: first.locations.map((l) => ({ id: l.id, label: l.label, parentId: (l as any).parentId ?? null, polygon: l.polygon ? { points: l.polygon.points } : null })) } : null
-    };
-  });
+  const out: BuildingView[] = buildings.map((b) => ({
+    id: b.id,
+    name: b.name,
+    floorCount: b.floors.length,
+    floors: b.floors.map((f) => ({
+      id: f.id,
+      name: f.name,
+      imageContent: f.imageContent,
+      locations: f.locations.map((l) => ({ id: l.id, label: l.label, parentId: (l as any).parentId ?? null, polygon: l.polygon ? { points: l.polygon.points } : null })),
+    })),
+  }));
 
   return { props: { buildings: out } };
 }

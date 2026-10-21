@@ -1,4 +1,26 @@
 import React, { useEffect, useState } from 'react';
+import UserPicker, { PickedUser } from './UserPicker';
+
+type Status = { ok: boolean; title: string; text?: string } | null;
+
+function StatusAlert({ status, onClose }: { status: Status; onClose: () => void }) {
+  if (!status) return null;
+  return (
+    <div className={'alert alert-dismissible' + (status.ok ? ' alert-success' : ' alert-error')} role={status.ok ? 'status' : 'alert'}>
+      <span className="alert-icon" aria-hidden>{status.ok ? '✓' : '!'}</span>
+      <div>
+        <strong>{status.title}</strong>
+        {status.text && <div>{status.text}</div>}
+      </div>
+      <button type="button" className="alert-close" onClick={onClose} aria-label="Dismiss">×</button>
+    </div>
+  );
+}
+
+async function errorText(res: Response) {
+  const j = await res.json().catch(() => ({}));
+  return j.error || `Request failed (${res.status})`;
+}
 
 export default function ReservationsPanel({ locationId, onChanged, polys }: { locationId: string; onChanged?: () => void; polys: Array<{ id: string; label?: string; type?: string; parentId?: string | null; points: any[] }> }) {
   const [loading, setLoading] = useState(false);
@@ -7,7 +29,10 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [filter, setFilter] = useState<'upcoming' | 'in-progress' | 'past'>('upcoming');
-  const [userId, setUserId] = useState('');
+  const [user, setUser] = useState<PickedUser | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createStatus, setCreateStatus] = useState<Status>(null);
+  const [listStatus, setListStatus] = useState<Status>(null);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0,10));
   const [startHour, setStartHour] = useState(9);
   const [endHour, setEndHour] = useState(10);
@@ -16,6 +41,11 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
   useEffect(() => {
     setPage(1);
   }, [locationId, filter]);
+
+  useEffect(() => {
+    setCreateStatus(null);
+    setListStatus(null);
+  }, [locationId]);
 
   useEffect(() => {
     loadReservations();
@@ -76,59 +106,68 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
   }
 
   async function doCreate() {
-    if (!userId) return alert('Enter user id');
+    if (!user) {
+      setCreateStatus({ ok: false, title: 'Choose who the reservation is for', text: 'Search for a user by name or email.' });
+      return;
+    }
     const startLocal = new Date(`${date}T${String(startHour).padStart(2,'0')}:00:00`);
     const endLocal = new Date(`${date}T${String(endHour).padStart(2,'0')}:00:00`);
-    const startIso = startLocal.toISOString();
-    const endIso = endLocal.toISOString();
+    if (endLocal <= startLocal) {
+      setCreateStatus({ ok: false, title: 'Check the times', text: '"To" must be later than "From".' });
+      return;
+    }
+    const who = user.name || user.email;
+    setCreating(true);
+    setCreateStatus(null);
     try {
-      const res = await fetch('/api/reservations/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locationId, userId, start: startIso, end: endIso, includeChildren }) });
+      const res = await fetch('/api/reservations/create', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ locationId, userId: user.id, start: startLocal.toISOString(), end: endLocal.toISOString(), includeChildren }) });
       if (!res.ok) {
-        const j = await res.json();
-        alert('Failed: ' + JSON.stringify(j));
+        setCreateStatus({ ok: false, title: `Couldn't reserve for ${who}`, text: await errorText(res) });
       } else {
-        alert('Created');
-        setUserId('');
+        setCreateStatus({ ok: true, title: `Reserved for ${who}`, text: `${startLocal.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}, ${startHour}:00 – ${endHour}:00` });
+        setUser(null);
         onChanged?.();
         loadReservations();
       }
     } catch (err) {
       console.error(err);
-      alert('Error creating');
+      setCreateStatus({ ok: false, title: `Couldn't reserve for ${who}`, text: 'Network error — check your connection and try again.' });
+    } finally {
+      setCreating(false);
     }
   }
 
   async function doDelete(id: string) {
     if (!confirm('Delete reservation?')) return;
+    setListStatus(null);
     try {
       const res = await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
       if (!res.ok) {
-        const j = await res.json();
-        alert('Failed deleting: ' + JSON.stringify(j));
+        setListStatus({ ok: false, title: "Couldn't delete the reservation", text: await errorText(res) });
       } else {
-        alert('Deleted');
+        setListStatus({ ok: true, title: 'Reservation deleted' });
         loadReservations();
         onChanged?.();
       }
     } catch (err) {
       console.error(err);
-      alert('Error deleting');
+      setListStatus({ ok: false, title: "Couldn't delete the reservation", text: 'Network error — check your connection and try again.' });
     }
   }
 
   async function toggleApproved(id: string, cur: boolean) {
+    setListStatus(null);
     try {
       const res = await fetch(`/api/reservations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: !cur }) });
       if (!res.ok) {
-        const j = await res.json();
-        alert('Failed updating: ' + JSON.stringify(j));
+        setListStatus({ ok: false, title: `Couldn't ${cur ? 'unapprove' : 'approve'} the reservation`, text: await errorText(res) });
       } else {
         loadReservations();
         onChanged?.();
       }
     } catch (err) {
       console.error(err);
-      alert('Error updating');
+      setListStatus({ ok: false, title: `Couldn't ${cur ? 'unapprove' : 'approve'} the reservation`, text: 'Network error — check your connection and try again.' });
     }
   }
 
@@ -143,6 +182,7 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
             ))}
           </div>
         </div>
+        <StatusAlert status={listStatus} onClose={() => setListStatus(null)} />
         {loading ? <div className="hint">Loading…</div> : (
             <div>
               {reservations.length === 0 ? <div className="hint">No {filter === 'upcoming' ? 'upcoming' : filter === 'past' ? 'past' : 'in-progress'} reservations</div> : (
@@ -181,9 +221,9 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
       <div className="panel" style={{ background: 'var(--surface)' }}>
         <h3>Create reservation</h3>
         <div className="row">
-          <div className="field">
+          <div className="field" style={{ minWidth: 260 }}>
             <label>User</label>
-            <input placeholder="User id or email" value={userId} onChange={(e) => setUserId(e.target.value)} />
+            <UserPicker value={user} onChange={(u) => { setUser(u); setCreateStatus(null); }} />
           </div>
           <div className="field">
             <label>Date</label>
@@ -206,8 +246,9 @@ export default function ReservationsPanel({ locationId, onChanged, polys }: { lo
           <label className="hint"><input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} /> Include sublocations</label>
         </div>
         <div className="actions">
-          <button className="btn-primary" onClick={doCreate}>Create reservation</button>
+          <button className="btn-primary" onClick={doCreate} disabled={creating}>{creating ? 'Reserving…' : 'Create reservation'}</button>
         </div>
+        <StatusAlert status={createStatus} onClose={() => setCreateStatus(null)} />
       </div>
     </div>
   );
