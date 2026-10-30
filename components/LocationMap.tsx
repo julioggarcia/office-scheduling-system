@@ -1,7 +1,16 @@
 import React, { useRef, useState } from 'react';
 import PolygonHoverTooltip from './PolygonHoverTooltip';
 
-export default function LocationMap({ imageUrl, polygons, onPolygonClick, selectedId, highlightedIds }: { imageUrl?: string; polygons?: Array<{ id: string; points: string; label?: string; parentId?: string }>; onPolygonClick?: (id: string) => void; selectedId?: string; highlightedIds?: string[] }) {
+export type SpaceStatus = 'free' | 'busy' | 'assigned' | 'mine';
+
+const STATUS_TEXT: Record<SpaceStatus, string> = {
+  free: 'free all day',
+  busy: 'some hours taken',
+  assigned: 'has an assigned seat',
+  mine: 'reserved by you',
+};
+
+export default function LocationMap({ imageUrl, polygons, onPolygonClick, selectedId, highlightedIds, statusById }: { imageUrl?: string; polygons?: Array<{ id: string; points: string; label?: string; parentId?: string }>; onPolygonClick?: (id: string) => void; selectedId?: string; highlightedIds?: string[]; statusById?: Record<string, SpaceStatus> }) {
   const width = 800;
   const height = 600;
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -34,31 +43,55 @@ export default function LocationMap({ imageUrl, polygons, onPolygonClick, select
   const selectedLabel = polygons?.find((p) => p.id === selectedId)?.label;
 
   return (
-    <div ref={wrapperRef} className="map-frame map-responsive">
-      {/* viewBox keeps polygon coordinates fixed while the map shrinks to fit phone screens */}
-      <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ height: 'auto', aspectRatio: `${width} / ${height}` }}>
-        {imageUrl && <image href={imageUrl} width={width} height={height} preserveAspectRatio="xMidYMid meet" />}
-        {polygons?.map((poly) => (
-          <g key={poly.id}>
-            <polygon
-              points={renderPoints(poly.points)}
-              onClick={() => onPolygonClick?.(poly.id)}
-              onMouseEnter={(e) => handleMouseEnter(e, poly)}
-              onMouseMove={handleMouseMove}
-              onMouseLeave={handleMouseLeave}
-              style={{
-                cursor: 'pointer',
-                strokeWidth: poly.id === selectedId ? 2.5 : 1.5,
-                fill: poly.id === selectedId ? 'rgba(99,102,241,0.3)' : (highlightedIds && highlightedIds.includes(poly.id) ? 'rgba(245,158,11,0.18)' : 'rgba(16,185,129,0.16)'),
-                stroke: poly.id === selectedId ? 'var(--accent)' : (highlightedIds && highlightedIds.includes(poly.id) ? 'var(--warning)' : 'var(--success)'),
-              }}
-            />
-          </g>
-        ))}
-        {/* show only selected polygon name in upper-left */}
-        {selectedLabel && <text x={10} y={16} style={{ fontSize: 14, fontWeight: 'bold', fill: 'var(--text)' }}>{selectedLabel}</text>}
-      </svg>
-      <PolygonHoverTooltip x={hover.x} y={hover.y} label={hover.label} visible={hover.visible} />
+    <div>
+      <div ref={wrapperRef} className="map-frame map-responsive">
+        {/* viewBox keeps polygon coordinates fixed while the map shrinks to fit phone screens */}
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ height: 'auto', aspectRatio: `${width} / ${height}` }}>
+          <defs>
+            <pattern id="space-busy" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect width="8" height="8" className="space-busy-bg" />
+              <line x1="0" y1="0" x2="0" y2="8" className="space-busy-line" strokeWidth="3" />
+            </pattern>
+          </defs>
+          {imageUrl && <image href={imageUrl} width={width} height={height} preserveAspectRatio="xMidYMid meet" />}
+          {polygons?.map((poly) => {
+            const status = statusById?.[poly.id] ?? 'free';
+            const cls = ['space', 'space-' + status];
+            if (poly.id === selectedId) cls.push('space-selected');
+            else if (highlightedIds?.includes(poly.id)) cls.push('space-child');
+            const name = poly.label || 'Unnamed space';
+            return (
+              <g key={poly.id}>
+                <polygon
+                  className={cls.join(' ')}
+                  points={renderPoints(poly.points)}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${name}, ${STATUS_TEXT[status]}`}
+                  aria-pressed={poly.id === selectedId}
+                  onClick={() => onPolygonClick?.(poly.id)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPolygonClick?.(poly.id); } }}
+                  onMouseEnter={(e) => handleMouseEnter(e, poly)}
+                  onMouseMove={handleMouseMove}
+                  onMouseLeave={handleMouseLeave}
+                />
+              </g>
+            );
+          })}
+          {/* show only selected polygon name in upper-left */}
+          {selectedLabel && <text x={10} y={20} className="map-selected-label">{selectedLabel}</text>}
+        </svg>
+        <PolygonHoverTooltip x={hover.x} y={hover.y} label={hover.label} visible={hover.visible} />
+      </div>
+      {statusById && (
+        <div className="legend map-legend" aria-label="Map key">
+          <span className="l-free">Free all day</span>
+          <span className="l-busy">Some hours taken</span>
+          <span className="l-asg">Assigned seat</span>
+          <span className="l-mine">Reserved by you</span>
+          <span className="l-sel2">Selected</span>
+        </div>
+      )}
     </div>
   );
 }

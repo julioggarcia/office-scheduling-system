@@ -81,7 +81,10 @@ export default function App({ Component, pageProps: { session, ...pageProps } }:
       <Head>
         <title>Office Reservation</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-        <meta name="theme-color" content="#4f46e5" />
+        <meta name="theme-color" content="#14284b" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Albert+Sans:wght@400;500;600;700&display=swap" />
       </Head>
       <Header theme={theme} setTheme={setTheme} />
       <main className="container">
