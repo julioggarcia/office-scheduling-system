@@ -3,7 +3,7 @@ import prisma from '../../../lib/prisma';
 import { canActFor, requireUser } from '../../../lib/auth';
 import { ACTIVE_STATUSES, blockedIntervalsForDate, findOverlappingAssignments, describeSchedule, locationTimezone, validateSchedule } from '../../../lib/assignments';
 import { ApprovalConflict, approveAssignment } from '../../../lib/assignmentApproval';
-import { sendMail } from '../../../lib/nodemailer';
+import { approverIds, notify } from '../../../lib/notify';
 import { isYmd } from '../../../lib/time';
 
 const include = {
@@ -89,14 +89,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       throw err;
     }
 
-    // let the approver know (best-effort)
-    try {
-      const approver = target.managerId ? await prisma.user.findUnique({ where: { id: target.managerId } }) : null;
-      const to = approver?.email || process.env.ADMIN_EMAIL;
-      if (to) await sendMail({ to, subject: 'Seat assignment request', text: `${target.name || target.email} requested ${location.label} as their assigned seat: ${describeSchedule(created)}.` });
-    } catch (err) {
-      console.error('Failed sending request email', err);
-    }
+    // tell the approver(s): the staff member's manager, else every admin
+    await notify(target.managerId ? [target.managerId] : await approverIds(null), { title: 'Seat assignment request', body: `${target.name || target.email} requested ${location.label}: ${describeSchedule(created)}`, link: '/assignments' }, actor.id);
+    if (target.id !== actor.id) await notify(target.id, { title: 'A seat was requested for you', body: `${location.label}: ${describeSchedule(created)}`, link: '/assignments' }, actor.id);
     return res.status(201).json(await prisma.seatAssignment.findUnique({ where: { id: created.id }, include }));
   }
 

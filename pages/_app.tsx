@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { SessionProvider, signOut, useSession } from 'next-auth/react';
 import React, { useEffect, useState } from 'react';
+import NotificationBell from '../components/NotificationBell';
 
 type Role = 'STAFF' | 'MANAGER' | 'ADMIN';
 
@@ -44,6 +45,7 @@ function Header({ theme, setTheme }: { theme: 'light' | 'dark'; setTheme: React.
         >
           {theme === 'dark' ? '☀' : '☾'}
         </button>
+        {session && <NotificationBell />}
         {session && (
           <div className="user-chip" title={session.user.email}>
             <span className="avatar" aria-hidden>{(session.user.name || session.user.email).slice(0, 1).toUpperCase()}</span>

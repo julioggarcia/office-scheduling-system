@@ -1,13 +1,34 @@
 import React, { useEffect, useState, useRef } from 'react';
 import ReservationsPanel from './ReservationsPanel';
+import UserPicker, { PickedUser } from './UserPicker';
+
+// "Require approval" checkbox; with no approver chosen, any admin approves
+function ApprovalFields({ requires, approver, onChange }: { requires: boolean; approver: PickedUser | null; onChange: (requires: boolean, approver: PickedUser | null) => void }) {
+  return (
+    <div className="field">
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="checkbox" checked={requires} onChange={(e) => onChange(e.target.checked, e.target.checked ? approver : null)} />
+        Require approval for reservations
+      </label>
+      {requires && (
+        <>
+          <UserPicker value={approver} onChange={(u) => onChange(true, u)} placeholder="Approver (leave empty for any admin)" />
+          <span className="hint">{approver ? `${approver.name || approver.email} approves requests for this space.` : 'Any admin can approve requests for this space.'}</span>
+        </>
+      )}
+    </div>
+  );
+}
 
 type Point = [number, number];
 
-export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved }: { imageUrl?: string; floorId?: string; existingPolygons?: Array<{ id: string; points: string | null; label?: string; type?: string; parentId?: string | null }>; onSaved?: () => void }) {
+export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved }: { imageUrl?: string; floorId?: string; existingPolygons?: Array<{ id: string; points: string | null; label?: string; type?: string; parentId?: string | null; requiresApproval?: boolean; approver?: PickedUser | null }>; onSaved?: () => void }) {
   const [mode, setMode] = useState<'draw' | 'select'>('draw');
   const [points, setPoints] = useState<Point[]>([]);
   const [label, setLabel] = useState('');
   const [type, setType] = useState('desk');
+  const [requiresApproval, setRequiresApproval] = useState(false);
+  const [approver, setApprover] = useState<PickedUser | null>(null);
   const [saving, setSaving] = useState(false);
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -15,7 +36,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
   const height = 600;
 
   // internal copy of existing polygons with pixel coords for editing
-  const [polys, setPolys] = useState<Array<{ id: string; label?: string; type?: string; parentId?: string | null; points: Point[] }>>([]);
+  const [polys, setPolys] = useState<Array<{ id: string; label?: string; type?: string; parentId?: string | null; requiresApproval?: boolean; approver?: PickedUser | null; points: Point[] }>>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [parentSelection, setParentSelection] = useState<string | ''>('');
   const [dragging, setDragging] = useState<{ polyId: string; idx: number } | null>(null);
@@ -27,8 +48,9 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
       return;
     }
     const out = existingPolygons.map((p) => {
+      const approval = { requiresApproval: !!p.requiresApproval, approver: p.approver ?? null };
       let ptsArr: Point[] = [];
-      if (!p.points) return { id: p.id, label: p.label, type: (p as any).type, parentId: (p as any).parentId ?? null, points: ptsArr };
+      if (!p.points) return { id: p.id, label: p.label, type: (p as any).type, parentId: (p as any).parentId ?? null, ...approval, points: ptsArr };
       try {
         const pts = JSON.parse(p.points) as number[][];
         ptsArr = pts.map((pt) => [pt[0] * width, pt[1] * height]);
@@ -37,7 +59,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
         const pairs = (p.points as string).trim().split(/\s+/).map((s) => s.split(',').map((n) => parseFloat(n)));
         ptsArr = pairs.map((a) => [a[0], a[1]] as Point);
       }
-      return { id: p.id, label: p.label, type: (p as any).type, parentId: (p as any).parentId ?? null, points: ptsArr };
+      return { id: p.id, label: p.label, type: (p as any).type, parentId: (p as any).parentId ?? null, ...approval, points: ptsArr };
     });
     setPolys(out);
   }, [existingPolygons]);
@@ -73,7 +95,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
 
     setSaving(true);
     try {
-      const res = await fetch('/api/locations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, type, floorId, points: normalized }) });
+      const res = await fetch('/api/locations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label, type, floorId, points: normalized, requiresApproval, approverId: approver?.id ?? null }) });
       const j = await res.json();
       if (!res.ok) {
         alert('Error creating location: ' + JSON.stringify(j));
@@ -82,6 +104,8 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
         setPoints([]);
         setLabel('');
         setType('desk');
+        setRequiresApproval(false);
+        setApprover(null);
         onSaved?.();
       }
     } catch (err) {
@@ -139,7 +163,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
     const rect = svgEl.getBoundingClientRect();
     const normalized = poly.points.map((p) => [p[0] / rect.width, p[1] / rect.height]);
     try {
-      const res = await fetch(`/api/locations/${selectedId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: poly.label, type: poly.type, points: normalized }) });
+      const res = await fetch(`/api/locations/${selectedId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ label: poly.label, type: poly.type, points: normalized, requiresApproval: !!poly.requiresApproval, approverId: poly.approver?.id ?? null }) });
       if (!res.ok) {
         const j = await res.json();
         alert('Failed updating polygon: ' + JSON.stringify(j));
@@ -239,6 +263,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
                 <option value="other">Other</option>
               </select>
             </div>
+            <ApprovalFields requires={requiresApproval} approver={approver} onChange={(r, a) => { setRequiresApproval(r); setApprover(a); }} />
             <button onClick={undo} disabled={points.length === 0}>↶ Undo point</button>
             <button className="btn-primary" onClick={saveNew} disabled={points.length < 3 || saving}>{saving ? 'Saving…' : 'Create location'}</button>
           </div>
@@ -260,6 +285,7 @@ export default function MapEditor({ imageUrl, floorId, existingPolygons, onSaved
                   <option value="other">Other</option>
                 </select>
               </div>
+              <ApprovalFields requires={!!polys.find(p => p.id === selectedId)?.requiresApproval} approver={polys.find(p => p.id === selectedId)?.approver ?? null} onChange={(r, a) => setPolys(ps => ps.map(p => p.id === selectedId ? { ...p, requiresApproval: r, approver: a } : p))} />
               <button className="btn-primary" onClick={saveEdit} disabled={!selectedId}>Save changes</button>
               <button className="btn-danger" onClick={deleteSelected} disabled={!selectedId}>Delete</button>
 

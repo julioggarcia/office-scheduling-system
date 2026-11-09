@@ -9,12 +9,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { floorId } = req.query as { floorId?: string };
     const where: any = {};
     if (floorId) where.floorId = floorId;
-    const locations = await prisma.location.findMany({ where, include: { polygon: true, floor: true, children: true } });
+    const locations = await prisma.location.findMany({ where, include: { polygon: true, floor: true, children: true, approver: { select: { id: true, name: true, email: true } } } });
     return res.json(locations);
   }
   if (req.method === 'POST') {
-    const { label, floorId, type, imageUrl, points, parentId } = req.body;
-    const data: any = { label, floorId, type, imageUrl };
+    const { label, floorId, type, imageUrl, points, parentId, requiresApproval, approverId } = req.body;
+    const data: any = { label, floorId, type, imageUrl, requiresApproval: !!requiresApproval, approverId: requiresApproval ? approverId || null : null };
     if (parentId) data.parentId = parentId;
     const loc = await prisma.location.create({ data });
     if (points) {

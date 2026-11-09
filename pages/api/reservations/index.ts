@@ -3,8 +3,15 @@ import prisma from '../../../lib/prisma';
 import { requireUser } from '../../../lib/auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!(await requireUser(req, res))) return;
+  const actor = await requireUser(req, res);
+  if (!actor) return;
   if (req.method === 'GET') {
+    // requests waiting on me: pending bookings at locations I approve (admins: every approval location without a named approver, plus their own)
+    if (req.query.pendingForMe === 'true') {
+      const locationWhere: any = actor.role === 'ADMIN' ? { requiresApproval: true, OR: [{ approverId: null }, { approverId: actor.id }] } : { approverId: actor.id };
+      const pending = await prisma.reservation.findMany({ where: { approved: false, end: { gt: new Date() }, location: locationWhere }, include: { user: true, location: true }, orderBy: { start: 'asc' } });
+      return res.json(pending);
+    }
     const {
       id,
       reservationId,

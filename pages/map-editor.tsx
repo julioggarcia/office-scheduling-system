@@ -9,7 +9,7 @@ export default function MapEditorPage() {
   const [buildingId, setBuildingId] = useState('');
   const [floorId, setFloorId] = useState('');
   const [imageData, setImageData] = useState<string | undefined>(undefined);
-  const [locations, setLocations] = useState<Array<{ id: string; label: string; points: string | null }>>([]);
+  const [locations, setLocations] = useState<Array<{ id: string; label: string; points: string | null; requiresApproval?: boolean; approver?: any }>>([]);
 
   useEffect(() => {
     fetch('/api/buildings').then((r) => r.json()).then((b) => setBuildings(b)).catch(console.error);
@@ -42,7 +42,7 @@ export default function MapEditorPage() {
       const res = await fetch('/api/locations?floorId=' + floorId);
       if (res.ok) {
         const j = await res.json();
-        setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId })));
+        setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId, requiresApproval: l.requiresApproval, approver: l.approver })));
       } else {
         setLocations([]);
       }
@@ -55,7 +55,7 @@ export default function MapEditorPage() {
     const res = await fetch('/api/locations?floorId=' + floorId);
     if (res.ok) {
       const j = await res.json();
-      setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId })));
+      setLocations(j.map((l: any) => ({ id: l.id, label: l.label, points: l.polygon?.points || null, type: l.type, parentId: l.parentId, requiresApproval: l.requiresApproval, approver: l.approver })));
     }
   }
 

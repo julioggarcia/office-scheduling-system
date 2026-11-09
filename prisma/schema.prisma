@@ -22,6 +22,9 @@ model User {
   seatAssignments      SeatAssignment[] @relation("AssignmentUser")
   requestedAssignments SeatAssignment[] @relation("AssignmentRequester")
   reviewedAssignments  SeatAssignment[] @relation("AssignmentReviewer")
+  approverFor   Location[] @relation("LocationApprover")
+  emailNotifications Boolean @default(true)
+  notifications Notification[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
@@ -58,6 +61,10 @@ model Location {
   children     Location[] @relation("LocationParent")
   polygon      LocationPolygon?
   imageUrl     String?
+  // when set, new reservations stay pending until the approver (or any admin when approverId is null) approves them
+  requiresApproval Boolean @default(false)
+  approver     User?     @relation("LocationApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  approverId   String?
   seatAssignments SeatAssignment[]
   reservations Reservation[]
 }
@@ -113,4 +120,18 @@ model Reservation {
   end         DateTime
   approved    Boolean  @default(false)
   createdAt   DateTime @default(now())
+}
+
+// In-app notification shown under the header bell; email copies are sent separately when the user allows it.
+model Notification {
+  id        String    @id @default(cuid())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
 }

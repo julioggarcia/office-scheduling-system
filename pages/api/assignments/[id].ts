@@ -3,7 +3,7 @@ import prisma from '../../../lib/prisma';
 import { canActFor, requireUser } from '../../../lib/auth';
 import { ApprovalConflict, approveAssignment, canReview } from '../../../lib/assignmentApproval';
 import { describeSchedule } from '../../../lib/assignments';
-import { sendMail } from '../../../lib/nodemailer';
+import { notify } from '../../../lib/notify';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const actor = await requireUser(req, res);
@@ -25,7 +25,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (action === 'reject') {
       const updated = await prisma.seatAssignment.update({ where: { id }, data: { status: 'REJECTED', reviewedById: actor.id, reviewedAt: new Date(), reviewNote: reviewNote || null } });
-      sendMail({ to: assignment.user.email, subject: 'Seat assignment request declined', text: `Your request for ${assignment.location.label} (${describeSchedule(assignment)}) was declined.${reviewNote ? ' Note: ' + reviewNote : ''}` }).catch((err) => console.error(err));
+      await notify(assignment.userId, { title: 'Seat request declined', body: `${assignment.location.label} (${describeSchedule(assignment)})${reviewNote ? '. Note: ' + reviewNote : ''}`, link: '/assignments' }, actor.id);
       return res.json(updated);
     }
 
@@ -43,6 +43,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const allowed = assignment.requestedById === actor.id || (await canActFor(actor, assignment.userId));
     if (!allowed) return res.status(403).json({ error: 'Not allowed' });
     const updated = await prisma.seatAssignment.update({ where: { id }, data: { status: 'CANCELLED', reviewedById: actor.id, reviewedAt: new Date() } });
+    // tell whichever side did not cancel it
+    await notify([assignment.userId, assignment.requestedById], { title: 'Seat assignment cancelled', body: `${assignment.location.label} (${describeSchedule(assignment)})`, link: '/assignments' }, actor.id);
     return res.json(updated);
   }
 

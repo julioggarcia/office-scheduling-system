@@ -309,6 +309,39 @@ function AssignmentRow({ a, meId, canReview, onChanged }: { a: Assignment; meId:
   );
 }
 
+// pending bookings at spaces the signed-in user approves (admins: spaces without a named approver)
+function BookingRequests() {
+  const [rows, setRows] = useState<any[]>([]);
+  const [error, setError] = useState('');
+  const load = () => fetch('/api/reservations?pendingForMe=true').then((r) => (r.ok ? r.json() : [])).then((r) => setRows(Array.isArray(r) ? r : [])).catch(() => setRows([]));
+  useEffect(() => { load(); }, []);
+  async function decide(id: string, approve: boolean) {
+    setError('');
+    const res = await fetch(`/api/reservations/${id}`, approve ? { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approved: true }) } : { method: 'DELETE' });
+    if (!res.ok) setError((await res.json().catch(() => ({}))).error || 'Could not save the decision');
+    load();
+  }
+  if (rows.length === 0 && !error) return null;
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <h2>Booking requests</h2>
+      {error && <div className="alert alert-error">{error}</div>}
+      <ul className="res-list">
+        {rows.map((r) => (
+          <li key={r.id} className="res-item">
+            <strong>{r.location.label}</strong> for {r.user.name || r.user.email}
+            <div className="when">{new Date(r.start).toLocaleString()} to {new Date(r.end).toLocaleTimeString()}</div>
+            <div className="actions">
+              <button className="btn-sm btn-primary" onClick={() => decide(r.id, true)}>Approve</button>
+              <button className="btn-sm btn-danger" onClick={() => decide(r.id, false)}>Decline</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function AssignmentsPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? 'STAFF';
@@ -351,6 +384,7 @@ export default function AssignmentsPage() {
           )}
         </div>
       </div>
+      <BookingRequests />
     </div>
   );
 }

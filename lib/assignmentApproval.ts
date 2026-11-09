@@ -1,6 +1,6 @@
 import type { SeatAssignment, User } from '@prisma/client';
 import prisma from './prisma';
-import { sendMail } from './nodemailer';
+import { notify } from './notify';
 import { describeSchedule, findConflictingReservations, findOverlappingAssignments } from './assignments';
 
 export class ApprovalConflict extends Error {
@@ -46,17 +46,10 @@ export async function approveAssignment(assignment: SeatAssignment, reviewer: Us
     });
   });
 
-  // best-effort notifications
-  try {
-    for (const r of reservations) {
-      if (r.user.email) {
-        await sendMail({ to: r.user.email, subject: 'Reservation cancelled', text: `Your reservation for ${r.location.label} (${r.start.toISOString()} – ${r.end.toISOString()}) was cancelled because the seat has been assigned to a staff member for that time.` });
-      }
-    }
-    await sendMail({ to: updated.user.email, subject: 'Seat assignment approved', text: `${updated.location.label} is now your assigned seat: ${describeSchedule(updated)}, from ${updated.startDate}${updated.endDate ? ' to ' + updated.endDate : ''}.` });
-  } catch (err) {
-    console.error('Failed sending assignment emails', err);
+  for (const r of reservations) {
+    await notify(r.userId, { title: 'Reservation cancelled', body: `${r.location.label} (${r.start.toISOString()} to ${r.end.toISOString()}) was cancelled because the seat is now assigned to a staff member for that time.`, link: '/' }, reviewer.id);
   }
+  await notify(updated.userId, { title: 'Seat assignment approved', body: `${updated.location.label}: ${describeSchedule(updated)}, from ${updated.startDate}${updated.endDate ? ' to ' + updated.endDate : ''}`, link: '/assignments' }, reviewer.id);
 
   return { assignment: updated, cancelledReservations: reservations.length };
 }

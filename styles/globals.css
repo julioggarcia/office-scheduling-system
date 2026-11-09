@@ -463,3 +463,26 @@ button.alert-close:hover:not(:disabled) { background: transparent; color: var(--
 .map-legend .l-asg::before { background-image: linear-gradient(var(--st-asg-fill), var(--st-asg-fill)); border: 1.5px dashed var(--st-asg-line); }
 .map-legend .l-mine::before { background-image: linear-gradient(var(--st-mine-fill), var(--st-mine-fill)); border: 2.5px solid var(--st-mine-line); }
 .map-legend .l-sel2::before { background-image: linear-gradient(var(--st-sel-fill), var(--st-sel-fill)); border: 3px solid var(--st-sel-line); }
+
+/* ---------- Notification bell ---------- */
+
+.notif { position: relative; margin-left: 4px; }
+.notif-btn { position: relative; }
+.notif-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.notif-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; width: min(360px, calc(100vw - 32px)); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+.notif-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+.notif-list { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow-y: auto; }
+.notif-list li > a, .notif-list li > div { display: block; padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text); cursor: pointer; }
+.notif-list li > a:hover, .notif-list li > div:hover { background: var(--panel); text-decoration: none; }
+.notif-title { font-weight: 600; font-size: 14px; }
+.notif-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 8px; }
+.notif-foot { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 13px; color: var(--muted); }
+
+/* your own reservation: filled accent chip with an x, so it reads as something you can click to cancel */
+.hour-chip.mine { position: relative; background: color-mix(in srgb, var(--accent) 22%, var(--surface)); border: 2px solid var(--accent); color: var(--text); font-weight: 700; cursor: pointer; }
+.hour-chip.mine::after { content: '\00d7'; position: absolute; top: 0; right: 5px; font-size: 14px; line-height: 1.2; color: var(--accent); }
+button.hour-chip.mine:hover, .hour-chip.mine.cancelling { background: var(--danger-soft); border-color: var(--danger); }
+.hour-chip.mine:hover::after, .hour-chip.mine.cancelling::after { color: var(--danger); }
+.legend:not(.map-legend) .l-mine::before { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); border: 2px solid var(--accent); }
+.cancel-panel { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+.cancel-panel .actions { margin-top: 8px; }

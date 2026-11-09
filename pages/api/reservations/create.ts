@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import prisma from '../../../lib/prisma';
-import { sendMail } from '../../../lib/nodemailer';
+import { approverIds, fmtRange, notify } from '../../../lib/notify';
 import { canActFor, normalizeEmail, requireUser } from '../../../lib/auth';
-import { describeSchedule, findBlockingAssignment, relatedLocationIds } from '../../../lib/assignments';
+import { describeSchedule, findBlockingAssignment, locationTimezone, relatedLocationIds } from '../../../lib/assignments';
 
 async function gatherDescendants(tx: any, id: string) {
   const ids = [id];
@@ -54,10 +54,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userRecord = target;
     }
 
+    // locations flagged requiresApproval hold the booking as pending unless the booker is an admin or the named approver
+    const loc = await prisma.location.findUnique({ where: { id: locationId }, select: { label: true, requiresApproval: true, approverId: true } });
+    if (!loc) return res.status(404).json({ error: 'Location not found' });
+    const autoApproved = !loc.requiresApproval || actor.role === 'ADMIN' || loc.approverId === actor.id;
+
     const result = await prisma.$transaction(async (tx) => {
       // assigned seats: someone else's approved schedule on this location, its parent or its children blocks booking
-      const blocking = await findBlockingAssignment(tx, await relatedLocationIds(tx, locationId), startDate, endDate, userRecord.id);
-      if (blocking) throw new Error(`${blocking.location.label} is assigned to ${blocking.user.name || blocking.user.email} at that time (${describeSchedule(blocking)})`);
+      const blocking = await findBlockingAssignment(tx, await relatedLocationIds(tx, locationId), startDate, endDate);
+      if (blocking) throw new Error(`${blocking.location.label} is assigned to ${blocking.userId === userRecord.id ? 'you' : blocking.user.name || blocking.user.email} at that time (${describeSchedule(blocking)})`);
 
       let locationIds = [locationId];
       if (includeChildren) {
@@ -85,20 +90,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // create reservations for all affected locationIds
       const created: any[] = [];
       for (const lid of locationIds) {
-        const r = await tx.reservation.create({ data: { locationId: lid, userId: userRecord.id, start: startDate, end: endDate, approved: true } });
+        const r = await tx.reservation.create({ data: { locationId: lid, userId: userRecord.id, start: startDate, end: endDate, approved: autoApproved } });
         created.push(r);
       }
       return created;
     });
 
-    // send notification (best-effort) to user
-    try {
-      const user = await prisma.user.findUnique({ where: { id: userRecord.id } });
-      if (user?.email) {
-        await sendMail({ to: user.email, subject: 'Reservation confirmed', text: `Your reservation for location ${locationId} from ${start} to ${end} is confirmed.` });
-      }
-    } catch (mailErr) {
-      console.error('Failed sending mail', mailErr);
+    // notifications never fail the booking
+    const when = fmtRange(startDate, endDate, await locationTimezone(prisma, locationId));
+    if (autoApproved) {
+      await notify(userRecord.id, { title: `${loc.label} reserved`, body: when, link: '/' }, actor.id);
+    } else {
+      await notify(userRecord.id, { title: `${loc.label} is awaiting approval`, body: when, link: '/' });
+      await notify(await approverIds(loc.approverId), { title: 'Reservation needs approval', body: `${userRecord.name || userRecord.email} requested ${loc.label}, ${when}`, link: '/assignments' }, actor.id);
     }
 
     return res.json(result);

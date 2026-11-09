@@ -67,11 +67,11 @@ export async function locationTimezone(db: Db, locationId: string) {
 
 /**
  * First approved assignment that blocks reserving [start, end) on any of `locationIds`.
- * The assigned person themself is never blocked by their own assignment.
+ * It blocks everyone, including the assigned person: their assigned hours already cover the seat.
  */
-export async function findBlockingAssignment(db: Db, locationIds: string[], start: Date, end: Date, reservingUserId: string) {
+export async function findBlockingAssignment(db: Db, locationIds: string[], start: Date, end: Date) {
   const assignments = await db.seatAssignment.findMany({
-    where: { locationId: { in: locationIds }, status: { in: ACTIVE_STATUSES }, userId: { not: reservingUserId } },
+    where: { locationId: { in: locationIds }, status: { in: ACTIVE_STATUSES } },
     include: { user: { select: { name: true, email: true } }, location: { select: { label: true } } },
   });
   if (!assignments.length) return null;

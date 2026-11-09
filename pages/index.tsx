@@ -372,10 +372,13 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
     return s < slotEnd && e > slotStart;
   };
 
-  // what occupies each hour: a reservation, or someone else's assigned-seat schedule (your own assignment doesn't block you)
-  const reserved = hours.map((h) => reservations.some((r) => overlaps(new Date(r.start), new Date(r.end), h)));
-  const assigned = hours.map((h) => blocks.find((b) => b.userId !== session?.user?.id && overlaps(new Date(b.start), new Date(b.end), h)) || null);
-  const unavailable = hours.map((_, i) => reserved[i] || !!assigned[i]);
+  // what occupies each hour: a reservation, or an assigned-seat schedule (including your own: assigned hours can't be booked again)
+  const meId = session?.user?.id;
+  // your own reservation covering each hour: shown differently and clickable to cancel
+  const mine = hours.map((h) => reservations.find((r) => r.userId === meId && overlaps(new Date(r.start), new Date(r.end), h)) || null);
+  const reserved = hours.map((h, i) => !mine[i] && reservations.some((r) => overlaps(new Date(r.start), new Date(r.end), h)));
+  const assigned = hours.map((h) => blocks.find((b) => overlaps(new Date(b.start), new Date(b.end), h)) || null);
+  const unavailable = hours.map((_, i) => reserved[i] || !!assigned[i] || !!mine[i]);
   // consecutive hours held by the same assignment, listed under the grid since chips are too small to name the person
   const assignedRuns: { block: AssignmentBlock; from: number; to: number }[] = [];
   assigned.forEach((b, i) => {
@@ -391,11 +394,13 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
   const [dragging, setDragging] = React.useState<{ anchor: number } | null>(null);
   const [status, setStatus] = React.useState<{ ok: boolean; text: string; when?: string; ics?: string } | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [cancelIdx, setCancelIdx] = React.useState<number | null>(null); // hour of your reservation picked for cancelling
   // firstH/lastH are box labels; the booking runs from firstH to lastH + 1
   const range = selStart === null ? null : { firstH: hours[selStart], lastH: hours[selEnd ?? selStart] };
 
   React.useEffect(() => {
     clearSelection();
+    setCancelIdx(null);
     setStatus(null);
   }, [selectedDate, locationId]);
 
@@ -420,6 +425,12 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
 
   function onHourPick(i: number, drag: boolean) {
     setStatus(null);
+    if (mine[i]) {
+      clearSelection();
+      setCancelIdx((c) => (c === i ? null : i));
+      return;
+    }
+    setCancelIdx(null);
     if (selStart !== null) {
       const last = selEnd ?? selStart;
       if (i >= selStart && i <= last) {
@@ -453,6 +464,28 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
     return () => window.removeEventListener('pointerup', up);
   }, []);
 
+  // give back [from, to) of one of your reservations (the whole thing, one hour, or from an hour onward to leave early)
+  async function release(reservationId: string, from: Date, to: Date, text: string) {
+    setBusy(true);
+    setStatus(null);
+    try {
+      const res = await fetch('/api/reservations/release', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reservationId, from: from.toISOString(), to: to.toISOString() }) });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setStatus({ ok: false, text: j.error || 'Could not cancel the reservation' });
+      } else {
+        setStatus({ ok: true, text });
+        setCancelIdx(null);
+        onReserved?.();
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus({ ok: false, text: 'Network error cancelling the reservation' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirmRequest() {
     if (!range) return;
     const startH = range.firstH;
@@ -469,7 +502,7 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
         setStatus({ ok: false, text: j.error || 'Could not create the reservation' });
       } else {
         const day = new Date(selectedDate + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
-        setStatus({ ok: true, text: `${locationLabel} is yours`, when: `${day} · ${fmtHours(range.firstH, range.lastH)}`, ics: icsHref(`Desk: ${locationLabel}`, startLocal, endLocal) });
+        setStatus({ ok: true, text: Array.isArray(j) && j.some((r: any) => !r.approved) ? `${locationLabel} requested, awaiting approval` : `${locationLabel} is yours`, when: `${day} · ${fmtHours(range.firstH, range.lastH)}`, ics: icsHref(`Desk: ${locationLabel}`, startLocal, endLocal) });
         clearSelection();
         onReserved?.();
       }
@@ -500,21 +533,23 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
           const isEdge = idx === selStart || idx === selEnd;
           const block = assigned[idx];
           const cls = ['hour-chip'];
-          if (reserved[idx]) cls.push('reserved');
+          if (mine[idx]) cls.push('mine');
+          else if (reserved[idx]) cls.push('reserved');
           else if (block) cls.push('assigned');
           if (isSelected) cls.push('selected');
           if (isEdge) cls.push('edge');
+          if (cancelIdx === idx) cls.push('cancelling');
           return (
             <button key={h} type="button"
               className={cls.join(' ')}
-              aria-disabled={unavailable[idx]}
-              aria-label={fmtHour(h) + (reserved[idx] ? ', reserved' : block ? ', assigned seat' : '')}
+              aria-disabled={unavailable[idx] && !mine[idx]}
+              aria-label={fmtHour(h) + (mine[idx] ? ', your reservation, select to cancel' : reserved[idx] ? ', reserved' : block ? ', assigned seat' : '')}
               aria-pressed={isSelected}
               onPointerDown={(e) => onHourPointerDown(idx, e)}
               onPointerEnter={() => onHourPointerEnter(idx)}
               // keyboard activation (pointer clicks are handled on pointerdown)
               onClick={(e) => { if (e.detail === 0) onHourPick(idx, false); }}
-              title={reserved[idx] ? 'Reserved' : block ? `Assigned seat: ${block.userName}${block.locationId !== locationId ? ` (${block.locationLabel})` : ''}` : undefined}>
+              title={mine[idx] ? 'Your reservation. Select to cancel.' : reserved[idx] ? 'Reserved' : block ? `Assigned seat: ${block.userId === meId ? 'you' : block.userName}${block.locationId !== locationId ? ` (${block.locationLabel})` : ''}` : undefined}>
               {fmtHour(h)}
             </button>
           );
@@ -523,15 +558,39 @@ function DaySchedule({ reservations, blocks, onReserved, selectedDate, locationI
       <div className="legend">
         <span className="l-free">Available</span>
         <span className="l-sel">Selected</span>
+        <span className="l-mine">Yours (select to cancel)</span>
         <span className="l-res">Reserved</span>
-        <span className="l-asg">Assigned to someone</span>
+        <span className="l-asg">Assigned seat</span>
       </div>
+      {cancelIdx !== null && mine[cancelIdx] && (() => {
+        const r = mine[cancelIdx];
+        const rs = new Date(r.start), re = new Date(r.end);
+        const [slotStart, slotEnd] = slotRange(hours[cancelIdx]);
+        const multi = rs < slotStart || re > slotEnd;
+        const laterHours = re > slotEnd;
+        const h = fmtHour(hours[cancelIdx]);
+        return (
+          <div className="cancel-panel" role="group" aria-label="Cancel your reservation">
+            <div>
+              <strong>Your reservation{r.approved ? '' : ' (awaiting approval)'}</strong>
+              <div className="hint">{rs.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} to {re.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>
+            </div>
+            <div className="actions">
+              {multi && <button type="button" className="btn-sm" disabled={busy} onClick={() => release(r.id, slotStart, slotEnd, `${h} cancelled`)}>Cancel {h} only</button>}
+              {multi && laterHours && rs < slotStart && <button type="button" className="btn-sm" disabled={busy} onClick={() => release(r.id, slotStart, re, `Cancelled from ${h} onward`)}>{slotStart <= new Date() ? 'Leave now' : `Cancel from ${h} onward`}</button>}
+              <button type="button" className="btn-sm btn-danger" disabled={busy} onClick={() => release(r.id, rs, re, 'Reservation cancelled')}>{multi ? 'Cancel whole reservation' : 'Cancel reservation'}</button>
+              <button type="button" className="btn-sm" onClick={() => setCancelIdx(null)}>Keep it</button>
+            </div>
+          </div>
+        );
+      })()}
+
       {assignedRuns.length > 0 && (
         <ul className="assigned-list">
           {assignedRuns.map((run) => (
             <li key={run.block.id + run.from}>
               <span className="assigned-dot" aria-hidden />
-              {fmtHours(hours[run.from], hours[run.to])} · assigned to <strong>{run.block.userName}</strong>
+              {fmtHours(hours[run.from], hours[run.to])} · assigned to <strong>{run.block.userId === meId ? 'you' : run.block.userName}</strong>
               {run.block.locationId !== locationId && <span className="hint"> ({run.block.locationLabel})</span>}
             </li>
           ))}

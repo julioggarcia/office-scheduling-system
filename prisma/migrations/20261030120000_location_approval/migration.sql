@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Location" ADD COLUMN "requiresApproval" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Location" ADD COLUMN "approverId" TEXT REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE;
