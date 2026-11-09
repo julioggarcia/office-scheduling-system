@@ -3,6 +3,11 @@
 Read this before changing reservations, assignments, approvals or notifications.
 Add a section at the top for each change worth remembering.
 
+## 2026-11-08: Fly.io prep
+- Added Dockerfile, fly.toml, .dockerignore. Removed unused `sqlite3`. Next 13.5.6 → 14.2.35, next-auth 4.24.15, nodemailer 7.0.13.
+- Migrations run at container start (Fly release machines don't mount the SQLite volume). Keep the app at 1 machine.
+- Open items and the auth/organizations plan: `Deploy_Plan.md`.
+
 ## 2026-11-08: location approval, in-app notifications, partial cancel
 
 ### What changed
